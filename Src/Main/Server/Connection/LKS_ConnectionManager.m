@@ -112,6 +112,9 @@ NSString *const LKS_ConnectionDidEndNotificationName = @"LKS_ConnectionDidEndNot
 		// 授权状态变更回调
 		self.wirelessChannel.authStateChangedBlock = ^(ECOChannelDeviceInfo *device, ECOAuthorizeResponseType authState) {
 			NSLog(@"🚀 Lookin authStateChangedBlock device:%@ authState:%ld", device, authState);
+			if (authState == ECOAuthorizeResponseType_AllowAlways) {
+				weakSelf.wirelessDevice = device;
+			}
 		};
 		// 请求授权状态认证回调
 		self.wirelessChannel.requestAuthBlock = ^(ECOChannelDeviceInfo *device, ECOAuthorizeResponseType authState) {
