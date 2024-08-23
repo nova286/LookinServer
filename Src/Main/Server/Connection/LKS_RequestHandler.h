@@ -1,4 +1,4 @@
-#ifdef SHOULD_COMPILE_LOOKIN_SERVER 
+#ifdef SHOULD_COMPILE_LOOKIN_SERVER
 
 //
 //  LKS_RequestHandler.h
@@ -11,6 +11,8 @@
 #import <Foundation/Foundation.h>
 
 @interface LKS_RequestHandler : NSObject
+
++ (instancetype)wireless;
 
 - (BOOL)canHandleRequestType:(uint32_t)requestType;
 
