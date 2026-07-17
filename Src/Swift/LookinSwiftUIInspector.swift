@@ -319,7 +319,13 @@ private final class LookinSwiftUIRootProbeView: UIView {
                 [
                     "section": "SwiftUI",
                     "title": "Runtime Nodes",
-                    "value": NSNumber(value: runtimeSnapshot?.parsedNodeCount ?? 0),
+                    "value": NSNumber(value: runtimeSnapshot?.visibleNodeCount ?? 0),
+                    "valueType": "number",
+                ],
+                [
+                    "section": "SwiftUI",
+                    "title": "Raw Runtime Nodes",
+                    "value": NSNumber(value: runtimeSnapshot?.rawNodeCount ?? 0),
                     "valueType": "number",
                 ],
             ],
@@ -602,7 +608,8 @@ private final class LookinSwiftUIRegistry {
 
 @available(iOS 13.0, *)
 private struct LookinSwiftUIViewDebugSnapshot {
-    let parsedNodeCount: Int
+    let rawNodeCount: Int
+    let visibleNodeCount: Int
     let subviews: [[String: Any]]
 }
 
@@ -625,9 +632,11 @@ extension _UIHostingView: LookinSwiftUIViewDebugDataProviding {
                 remainingNodeCount: &remainingNodeCount
             )
         }
+        let subviews = roots.flatMap(\.lookinRepresentations)
         return LookinSwiftUIViewDebugSnapshot(
-            parsedNodeCount: roots.reduce(0) { $0 + $1.nodeCount },
-            subviews: roots.flatMap(\.lookinRepresentations)
+            rawNodeCount: roots.reduce(0) { $0 + $1.nodeCount },
+            visibleNodeCount: LookinSwiftUIViewDebugNode.representationCount(in: subviews),
+            subviews: subviews
         )
     }
 }
@@ -635,13 +644,79 @@ extension _UIHostingView: LookinSwiftUIViewDebugDataProviding {
 @available(iOS 13.0, *)
 private struct LookinSwiftUIViewDebugNode {
     private static let maximumDepth = 48
-    private static let collapsedContainerNames: Set<String> = [
+    private static let frameworkModuleNames: Set<String> = [
+        "AttributeGraph",
+        "LookinServerSwift",
+        "SwiftUI",
+        "SwiftUICore",
+        "UIKit",
+        "_SwiftUI",
+    ]
+    private static let runtimeContainerNames: Set<String> = [
         "AnyView",
+        "Element",
+        "Group",
         "ModifiedContent",
         "Optional",
+        "PlaceholderContentView",
+        "Tree",
         "TupleView",
+        "UpdateBridgesToAllowedBehaviors",
         "_ConditionalContent",
+        "_ViewList_View",
         "_ViewModifier_Content",
+    ]
+    private static let meaningfulRuntimeNames: Set<String> = [
+        "AsyncImage",
+        "Button",
+        "Canvas",
+        "Color",
+        "ContentUnavailableView",
+        "ControlGroup",
+        "DatePicker",
+        "DisclosureGroup",
+        "Divider",
+        "ForEach",
+        "Form",
+        "GeometryReader",
+        "Grid",
+        "GridRow",
+        "GroupBox",
+        "HStack",
+        "Image",
+        "Label",
+        "LabeledContent",
+        "LazyHGrid",
+        "LazyHStack",
+        "LazyVGrid",
+        "LazyVStack",
+        "Link",
+        "List",
+        "Map",
+        "NavigationSplitView",
+        "NavigationStack",
+        "Picker",
+        "ProgressView",
+        "ScrollView",
+        "Section",
+        "SecureField",
+        "ShapeView",
+        "Slider",
+        "Spacer",
+        "Stepper",
+        "TabView",
+        "Text",
+        "TextEditor",
+        "TextField",
+        "TimelineView",
+        "Toggle",
+        "VStack",
+        "VideoPlayer",
+        "ZStack",
+        "_GridLayout",
+        "_HStackLayout",
+        "_VStackLayout",
+        "_ZStackLayout",
     ]
 
     let type: String
@@ -734,7 +809,7 @@ private struct LookinSwiftUIViewDebugNode {
 
     var lookinRepresentations: [[String: Any]] {
         let childRepresentations = children.flatMap(\.lookinRepresentations)
-        if Self.collapsedContainerNames.contains(shortTypeName), position == nil, size == nil {
+        if !shouldDisplayRuntimeNode {
             return childRepresentations
         }
 
@@ -755,6 +830,30 @@ private struct LookinSwiftUIViewDebugNode {
         return [representation]
     }
 
+    static func representationCount(in representations: [[String: Any]]) -> Int {
+        representations.reduce(0) { count, representation in
+            let children = representation["subviews"] as? [[String: Any]] ?? []
+            return count + 1 + representationCount(in: children)
+        }
+    }
+
+    private var shouldDisplayRuntimeNode: Bool {
+        if !Self.sourceViewNames(in: type).isEmpty {
+            return true
+        }
+        if Self.meaningfulRuntimeNames.contains(shortTypeName) {
+            return true
+        }
+        if Self.runtimeContainerNames.contains(shortTypeName) || shortTypeName.hasSuffix("Modifier") {
+            return false
+        }
+        if shortTypeName.hasPrefix("_") {
+            return false
+        }
+
+        return children.isEmpty && frameInWindow != nil
+    }
+
     private var shortTypeName: String {
         let base = type.split(separator: "<", maxSplits: 1).first.map(String.init) ?? type
         return base.split(separator: ".").last.map(String.init) ?? base
@@ -768,12 +867,18 @@ private struct LookinSwiftUIViewDebugNode {
         var names: [String] = []
         var start = type.startIndex
         while let separator = type[start...].firstIndex(of: ".") {
+            let moduleStart = type[..<separator].lastIndex {
+                !($0.isLetter || $0.isNumber || $0 == "_")
+            }.map { type.index(after: $0) } ?? type.startIndex
+            let moduleName = String(type[moduleStart..<separator])
             let nameStart = type.index(after: separator)
             let nameEnd = type[nameStart...].firstIndex {
                 !($0.isLetter || $0.isNumber || $0 == "_")
             } ?? type.endIndex
             let name = String(type[nameStart..<nameEnd])
-            if name.hasSuffix("View"), !names.contains(name) {
+            if !frameworkModuleNames.contains(moduleName),
+               name.hasSuffix("View"),
+               !names.contains(name) {
                 names.append(name)
             }
             guard nameEnd < type.endIndex else { break }
