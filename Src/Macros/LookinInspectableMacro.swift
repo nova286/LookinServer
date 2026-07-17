@@ -62,7 +62,9 @@ public struct LookinInspectableMacro: MemberAttributeMacro, MemberMacro {
         """
         @resultBuilder
         private enum \(builderName) {
-            static func buildExpression<Content: View>(_ content: Content) -> Content {
+            static func buildExpression<LookinBuiltContent: View>(
+                _ content: LookinBuiltContent
+            ) -> LookinBuiltContent {
                 content
             }
 
@@ -70,37 +72,45 @@ public struct LookinInspectableMacro: MemberAttributeMacro, MemberMacro {
                 EmptyView()
             }
 
-            static func buildBlock<Content: View>(_ content: Content) -> Content {
+            static func buildBlock<LookinBuiltContent: View>(
+                _ content: LookinBuiltContent
+            ) -> LookinBuiltContent {
                 content
             }
 
-            static func buildBlock<each Content: View>(
-                _ content: repeat each Content
-            ) -> TupleView<(repeat each Content)> {
+            static func buildBlock<each LookinBuiltContent: View>(
+                _ content: repeat each LookinBuiltContent
+            ) -> TupleView<(repeat each LookinBuiltContent)> {
                 ViewBuilder.buildBlock(repeat each content)
             }
 
-            static func buildIf<Content: View>(_ content: Content?) -> Content? {
+            static func buildIf<LookinBuiltContent: View>(
+                _ content: LookinBuiltContent?
+            ) -> LookinBuiltContent? {
                 content
             }
 
-            static func buildEither<TrueContent: View, FalseContent: View>(
-                first: TrueContent
-            ) -> _ConditionalContent<TrueContent, FalseContent> {
+            static func buildEither<LookinTrueContent: View, LookinFalseContent: View>(
+                first: LookinTrueContent
+            ) -> _ConditionalContent<LookinTrueContent, LookinFalseContent> {
                 ViewBuilder.buildEither(first: first)
             }
 
-            static func buildEither<TrueContent: View, FalseContent: View>(
-                second: FalseContent
-            ) -> _ConditionalContent<TrueContent, FalseContent> {
+            static func buildEither<LookinTrueContent: View, LookinFalseContent: View>(
+                second: LookinFalseContent
+            ) -> _ConditionalContent<LookinTrueContent, LookinFalseContent> {
                 ViewBuilder.buildEither(second: second)
             }
 
-            static func buildLimitedAvailability<Content: View>(_ content: Content) -> AnyView {
+            static func buildLimitedAvailability<LookinBuiltContent: View>(
+                _ content: LookinBuiltContent
+            ) -> AnyView {
                 AnyView(content)
             }
 
-            static func buildFinalResult<Content: View>(_ component: Content) -> some View {
+            static func buildFinalResult<LookinBuiltContent: View>(
+                _ component: LookinBuiltContent
+            ) -> some View {
         #if DEBUG
                 component._lookinAutomaticallyInspectable(
                     title: "\(typeName)",
