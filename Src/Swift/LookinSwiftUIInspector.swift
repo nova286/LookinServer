@@ -530,7 +530,6 @@ private final class LookinSwiftUIRegistry {
             "title": entry.title,
             "subtitle": entry.source,
             "properties": properties,
-            "lookin_source": entry.source,
         ]
 
         if let probeView = entry.probeView {
