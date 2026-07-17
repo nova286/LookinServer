@@ -161,8 +161,16 @@ public struct LookinSwiftUIProperty {
 public extension View {
     /// Installs the bridge that exposes registered SwiftUI nodes to Lookin.
     /// Add this once near the root of each inspected SwiftUI hierarchy.
-    func lookinSwiftUIInspector(title: String = "SwiftUI") -> some View {
-        modifier(LookinSwiftUIInspectorRootModifier(title: title))
+    func lookinSwiftUIInspector(
+        title: String = "SwiftUI",
+        includeRuntimeNodes: Bool = false
+    ) -> some View {
+        modifier(
+            LookinSwiftUIInspectorRootModifier(
+                title: title,
+                includeRuntimeNodes: includeRuntimeNodes
+            )
+        )
     }
 
     /// Registers a semantic SwiftUI node under the nearest inspector root.
@@ -232,6 +240,7 @@ private extension EnvironmentValues {
 @available(iOS 13.0, *)
 private struct LookinSwiftUIInspectorRootModifier: ViewModifier {
     let title: String
+    let includeRuntimeNodes: Bool
     @State private var registry = LookinSwiftUIRegistry()
 
     func body(content: Content) -> some View {
@@ -239,7 +248,11 @@ private struct LookinSwiftUIInspectorRootModifier: ViewModifier {
             .environment(\.lookinSwiftUIRegistry, registry)
             .environment(\.lookinSwiftUIParentID, nil)
             .background(
-                LookinSwiftUIRootProbe(registry: registry, title: title)
+                LookinSwiftUIRootProbe(
+                    registry: registry,
+                    title: title,
+                    includeRuntimeNodes: includeRuntimeNodes
+                )
                     .allowsHitTesting(false)
             )
     }
@@ -312,14 +325,20 @@ private struct LookinSwiftUIAutomaticNodeModifier: ViewModifier {
 private struct LookinSwiftUIRootProbe: UIViewRepresentable {
     let registry: LookinSwiftUIRegistry
     let title: String
+    let includeRuntimeNodes: Bool
 
     func makeUIView(context: Context) -> LookinSwiftUIRootProbeView {
-        LookinSwiftUIRootProbeView(registry: registry, title: title)
+        LookinSwiftUIRootProbeView(
+            registry: registry,
+            title: title,
+            includeRuntimeNodes: includeRuntimeNodes
+        )
     }
 
     func updateUIView(_ uiView: LookinSwiftUIRootProbeView, context: Context) {
         uiView.registry = registry
         uiView.inspectorTitle = title
+        uiView.includeRuntimeNodes = includeRuntimeNodes
     }
 }
 
@@ -327,10 +346,12 @@ private struct LookinSwiftUIRootProbe: UIViewRepresentable {
 private final class LookinSwiftUIRootProbeView: UIView {
     var registry: LookinSwiftUIRegistry
     var inspectorTitle: String
+    var includeRuntimeNodes: Bool
 
-    init(registry: LookinSwiftUIRegistry, title: String) {
+    init(registry: LookinSwiftUIRegistry, title: String, includeRuntimeNodes: Bool) {
         self.registry = registry
         inspectorTitle = title
+        self.includeRuntimeNodes = includeRuntimeNodes
         super.init(frame: .zero)
         backgroundColor = .clear
         isUserInteractionEnabled = false
@@ -346,35 +367,40 @@ private final class LookinSwiftUIRootProbeView: UIView {
     func lookinCustomDebugInfos() -> [String: Any]? {
         guard let window = window else { return nil }
         let registeredSubviews = registry.rawSubviews(in: window)
-        let runtimeSnapshot = lookinRuntimeSnapshot()
+        let runtimeSnapshot = includeRuntimeNodes ? lookinRuntimeSnapshot() : nil
         let subviews = Self.merging(
             registeredSubviews: registeredSubviews,
             runtimeSubviews: runtimeSnapshot?.subviews ?? []
         )
-        var semanticRoot: [String: Any] = [
-            "title": inspectorTitle,
-            "subtitle": "SwiftUI Semantic Hierarchy",
-            "semanticKind": "swiftui-root",
-            "properties": [
-                [
-                    "section": "SwiftUI",
-                    "title": "Root Nodes",
-                    "value": NSNumber(value: subviews.count),
-                    "valueType": "number",
-                ],
+        var properties: [[String: Any]] = [
+            [
+                "section": "SwiftUI",
+                "title": "Root Nodes",
+                "value": NSNumber(value: registeredSubviews.count),
+                "valueType": "number",
+            ],
+        ]
+        if let runtimeSnapshot = runtimeSnapshot {
+            properties.append(contentsOf: [
                 [
                     "section": "SwiftUI",
                     "title": "Runtime Nodes",
-                    "value": NSNumber(value: runtimeSnapshot?.visibleNodeCount ?? 0),
+                    "value": NSNumber(value: runtimeSnapshot.visibleNodeCount),
                     "valueType": "number",
                 ],
                 [
                     "section": "SwiftUI",
                     "title": "Raw Runtime Nodes",
-                    "value": NSNumber(value: runtimeSnapshot?.rawNodeCount ?? 0),
+                    "value": NSNumber(value: runtimeSnapshot.rawNodeCount),
                     "valueType": "number",
                 ],
-            ],
+            ])
+        }
+        var semanticRoot: [String: Any] = [
+            "title": inspectorTitle,
+            "subtitle": "SwiftUI Semantic Hierarchy",
+            "semanticKind": "swiftui-root",
+            "properties": properties,
             "subviews": subviews,
         ]
         semanticRoot["frameInWindow"] = NSValue(cgRect: convert(bounds, to: window))
