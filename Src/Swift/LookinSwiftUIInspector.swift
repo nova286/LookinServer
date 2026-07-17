@@ -1,7 +1,18 @@
 #if SHOULD_COMPILE_LOOKIN_SERVER && canImport(SwiftUI)
 
+import Darwin
+import Foundation
 import SwiftUI
 import UIKit
+
+/// Enables SwiftUI's rendered debug tree. Call this before the first hosting
+/// view is created (normally from the app's `App.init`).
+@available(iOS 13.0, *)
+public enum LookinSwiftUIInspector {
+    public static func prepareRuntimeTreeCapture() {
+        setenv("SWIFTUI_VIEW_DEBUG", "287", 1)
+    }
+}
 
 /// An editable value displayed in Lookin's existing custom-attribute panel.
 ///
@@ -288,7 +299,12 @@ private final class LookinSwiftUIRootProbeView: UIView {
     @objc(lookin_customDebugInfos_4)
     func lookinCustomDebugInfos() -> [String: Any]? {
         guard let window = window else { return nil }
-        let subviews = registry.rawSubviews(in: window)
+        let registeredSubviews = registry.rawSubviews(in: window)
+        let runtimeSnapshot = lookinRuntimeSnapshot()
+        let subviews = Self.merging(
+            registeredSubviews: registeredSubviews,
+            runtimeSubviews: runtimeSnapshot?.subviews ?? []
+        )
         var semanticRoot: [String: Any] = [
             "title": inspectorTitle,
             "subtitle": "SwiftUI Semantic Hierarchy",
@@ -300,6 +316,12 @@ private final class LookinSwiftUIRootProbeView: UIView {
                     "value": NSNumber(value: subviews.count),
                     "valueType": "number",
                 ],
+                [
+                    "section": "SwiftUI",
+                    "title": "Runtime Nodes",
+                    "value": NSNumber(value: runtimeSnapshot?.parsedNodeCount ?? 0),
+                    "valueType": "number",
+                ],
             ],
             "subviews": subviews,
         ]
@@ -308,6 +330,29 @@ private final class LookinSwiftUIRootProbeView: UIView {
             "title": inspectorTitle,
             "subviews": [semanticRoot],
         ]
+    }
+
+    private func lookinRuntimeSnapshot() -> LookinSwiftUIViewDebugSnapshot? {
+        var ancestor = superview
+        while let view = ancestor {
+            if let provider = view as? LookinSwiftUIViewDebugDataProviding {
+                return provider.lookinSwiftUISnapshot()
+            }
+            ancestor = view.superview
+        }
+        return nil
+    }
+
+    private static func merging(
+        registeredSubviews: [[String: Any]],
+        runtimeSubviews: [[String: Any]]
+    ) -> [[String: Any]] {
+        guard !runtimeSubviews.isEmpty else { return registeredSubviews }
+        guard var firstRegistered = registeredSubviews.first else { return runtimeSubviews }
+
+        let existingChildren = firstRegistered["subviews"] as? [[String: Any]] ?? []
+        firstRegistered["subviews"] = existingChildren + runtimeSubviews
+        return [firstRegistered] + registeredSubviews.dropFirst()
     }
 }
 
@@ -552,6 +597,224 @@ private final class LookinSwiftUIRegistry {
         }
 
         return dictionary
+    }
+}
+
+@available(iOS 13.0, *)
+private struct LookinSwiftUIViewDebugSnapshot {
+    let parsedNodeCount: Int
+    let subviews: [[String: Any]]
+}
+
+@available(iOS 13.0, *)
+@MainActor
+private protocol LookinSwiftUIViewDebugDataProviding {
+    func lookinSwiftUISnapshot() -> LookinSwiftUIViewDebugSnapshot
+}
+
+@available(iOS 13.0, *)
+@MainActor
+extension _UIHostingView: LookinSwiftUIViewDebugDataProviding {
+    fileprivate func lookinSwiftUISnapshot() -> LookinSwiftUIViewDebugSnapshot {
+        var remainingNodeCount = 1_200
+        let roots = _viewDebugData().flatMap { data in
+            LookinSwiftUIViewDebugNode.nodes(
+                from: data,
+                hostView: self,
+                depth: 0,
+                remainingNodeCount: &remainingNodeCount
+            )
+        }
+        return LookinSwiftUIViewDebugSnapshot(
+            parsedNodeCount: roots.reduce(0) { $0 + $1.nodeCount },
+            subviews: roots.flatMap(\.lookinRepresentations)
+        )
+    }
+}
+
+@available(iOS 13.0, *)
+private struct LookinSwiftUIViewDebugNode {
+    private static let maximumDepth = 48
+    private static let collapsedContainerNames: Set<String> = [
+        "AnyView",
+        "ModifiedContent",
+        "Optional",
+        "TupleView",
+        "_ConditionalContent",
+        "_ViewModifier_Content",
+    ]
+
+    let type: String
+    let position: CGPoint?
+    let size: CGSize?
+    let transform: String?
+    let children: [LookinSwiftUIViewDebugNode]
+    let hostView: UIView
+
+    var nodeCount: Int {
+        1 + children.reduce(0) { $0 + $1.nodeCount }
+    }
+
+    static func nodes(
+        from rawData: Any,
+        hostView: UIView,
+        depth: Int,
+        remainingNodeCount: inout Int
+    ) -> [LookinSwiftUIViewDebugNode] {
+        guard depth <= maximumDepth, remainingNodeCount > 0 else { return [] }
+        remainingNodeCount -= 1
+
+        var properties: [String: String] = [:]
+        var rawChildren: [Any] = []
+        for child in Mirror(reflecting: rawData).children {
+            switch child.label {
+            case "data":
+                properties = reflectedProperties(from: child.value)
+            case "childData":
+                rawChildren = Mirror(reflecting: child.value).children.map(\.value)
+            default:
+                continue
+            }
+        }
+
+        let children = rawChildren.flatMap {
+            nodes(
+                from: $0,
+                hostView: hostView,
+                depth: depth + 1,
+                remainingNodeCount: &remainingNodeCount
+            )
+        }
+        guard let type = properties["type"], !type.isEmpty else { return children }
+
+        return [LookinSwiftUIViewDebugNode(
+            type: type,
+            position: parsePoint(properties["position"]),
+            size: parseSize(properties["size"]),
+            transform: properties["transform"],
+            children: children,
+            hostView: hostView
+        )]
+    }
+
+    private static func reflectedProperties(from rawProperties: Any) -> [String: String] {
+        var result: [String: String] = [:]
+        for entry in Mirror(reflecting: rawProperties).children {
+            let pair = Array(Mirror(reflecting: entry.value).children)
+            guard pair.count == 2 else { continue }
+            let key = String(describing: pair[0].value)
+            guard key == "type" || key == "position" || key == "size" || key == "transform" else {
+                continue
+            }
+            result[key] = String(describing: pair[1].value)
+        }
+        return result
+    }
+
+    private static func parsePoint(_ value: String?) -> CGPoint? {
+        guard let tuple = parseTuple(value) else { return nil }
+        return CGPoint(x: tuple.0, y: tuple.1)
+    }
+
+    private static func parseSize(_ value: String?) -> CGSize? {
+        guard let tuple = parseTuple(value), tuple.0 >= 0, tuple.1 >= 0 else { return nil }
+        return CGSize(width: tuple.0, height: tuple.1)
+    }
+
+    private static func parseTuple(_ value: String?) -> (CGFloat, CGFloat)? {
+        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              value.first == "(", value.last == ")" else { return nil }
+        let components = value.dropFirst().dropLast().split(separator: ",", maxSplits: 1)
+        guard components.count == 2,
+              let first = Double(components[0].trimmingCharacters(in: .whitespaces)),
+              let second = Double(components[1].trimmingCharacters(in: .whitespaces)),
+              first.isFinite, second.isFinite else { return nil }
+        return (CGFloat(first), CGFloat(second))
+    }
+
+    var lookinRepresentations: [[String: Any]] {
+        let childRepresentations = children.flatMap(\.lookinRepresentations)
+        if Self.collapsedContainerNames.contains(shortTypeName), position == nil, size == nil {
+            return childRepresentations
+        }
+
+        var representation: [String: Any] = [
+            "title": displayTitle,
+            "semanticKind": "swiftui-runtime-node",
+            "properties": lookinProperties,
+        ]
+        if let size = size {
+            representation["subtitle"] = "\(format(size.width)) × \(format(size.height))"
+        }
+        if let frame = frameInWindow {
+            representation["frameInWindow"] = NSValue(cgRect: frame)
+        }
+        if !childRepresentations.isEmpty {
+            representation["subviews"] = childRepresentations
+        }
+        return [representation]
+    }
+
+    private var shortTypeName: String {
+        let base = type.split(separator: "<", maxSplits: 1).first.map(String.init) ?? type
+        return base.split(separator: ".").last.map(String.init) ?? base
+    }
+
+    private var displayTitle: String {
+        Self.sourceViewNames(in: type).last ?? shortTypeName
+    }
+
+    private static func sourceViewNames(in type: String) -> [String] {
+        var names: [String] = []
+        var start = type.startIndex
+        while let separator = type[start...].firstIndex(of: ".") {
+            let nameStart = type.index(after: separator)
+            let nameEnd = type[nameStart...].firstIndex {
+                !($0.isLetter || $0.isNumber || $0 == "_")
+            } ?? type.endIndex
+            let name = String(type[nameStart..<nameEnd])
+            if name.hasSuffix("View"), !names.contains(name) {
+                names.append(name)
+            }
+            guard nameEnd < type.endIndex else { break }
+            start = type.index(after: nameEnd)
+        }
+        return names
+    }
+
+    private var frameInWindow: CGRect? {
+        guard let position = position, let size = size, size.width > 0, size.height > 0 else {
+            return nil
+        }
+        let frame = CGRect(
+            x: position.x - size.width / 2,
+            y: position.y - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
+        return hostView.convert(frame, to: nil)
+    }
+
+    private var lookinProperties: [[String: Any]] {
+        var result = [property(title: "Type", value: type)]
+        if let position = position {
+            result.append(property(title: "Position", value: "(\(format(position.x)), \(format(position.y)))"))
+        }
+        if let size = size {
+            result.append(property(title: "Size", value: "(\(format(size.width)), \(format(size.height)))"))
+        }
+        if let transform = transform, !transform.isEmpty {
+            result.append(property(title: "Transform", value: transform))
+        }
+        return result
+    }
+
+    private func property(title: String, value: String) -> [String: Any] {
+        ["section": "SwiftUI", "title": title, "value": value, "valueType": "string"]
+    }
+
+    private func format(_ value: CGFloat) -> String {
+        String(format: "%.2f", Double(value))
     }
 }
 
