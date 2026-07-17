@@ -189,6 +189,21 @@ public extension View {
             )
         )
     }
+
+    /// Used by `@LookinInspectable` macro expansions. Callers should prefer
+    /// the macro or the public `lookinInspectable` modifier.
+    func _lookinAutomaticallyInspectable(
+        title: String,
+        fileID: StaticString,
+        line: UInt
+    ) -> some View {
+        modifier(
+            LookinSwiftUIAutomaticNodeModifier(
+                title: title,
+                source: "\(String(describing: fileID)):\(line)"
+            )
+        )
+    }
 }
 
 @available(iOS 13.0, *)
@@ -254,6 +269,37 @@ private struct LookinSwiftUINodeModifier: ViewModifier {
                             title: title,
                             source: source,
                             properties: properties
+                        )
+                        .allowsHitTesting(false)
+                    }
+                }
+            )
+    }
+}
+
+@available(iOS 13.0, *)
+private struct LookinSwiftUIAutomaticNodeModifier: ViewModifier {
+    let title: String
+    let source: String
+
+    @Environment(\.lookinSwiftUIRegistry) private var registry
+    @Environment(\.lookinSwiftUIParentID) private var inheritedParentID
+    @State private var instanceID = UUID().uuidString
+
+    func body(content: Content) -> some View {
+        let id = "lookin.macro.\(title).\(instanceID)"
+        content
+            .environment(\.lookinSwiftUIParentID, id)
+            .background(
+                Group {
+                    if let registry = registry {
+                        LookinSwiftUINodeProbe(
+                            registry: registry,
+                            id: id,
+                            parentID: inheritedParentID,
+                            title: title,
+                            source: source,
+                            properties: []
                         )
                         .allowsHitTesting(false)
                     }

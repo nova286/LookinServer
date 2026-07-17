@@ -25,10 +25,10 @@ To use Lookin macOS app, you need to integrate LookinServer (iOS Framework of Lo
 The `develop` branch can expose opt-in SwiftUI semantic nodes through Lookin's existing hierarchy and custom-attribute protocol. No macOS client changes are required.
 
 ```swift
-#if DEBUG
+import SwiftUI
 import LookinServerSwift
-#endif
 
+@LookinInspectable
 struct ContentView: View {
     @State private var title = "Hello"
     @State private var enabled = true
@@ -52,14 +52,13 @@ struct ContentView: View {
 #endif
         }
 #if DEBUG
-        .lookinInspectable(id: "content", title: "ContentView")
         .lookinSwiftUIInspector()
 #endif
     }
 }
 ```
 
-Keep the imports and modifier calls behind `#if DEBUG`. IDs must be stable and unique within one inspector root. This bridge reports explicitly annotated semantic nodes; it does not introspect SwiftUI's private runtime tree.
+`@LookinInspectable` automatically wraps the type's `body` in Debug builds, gives each rendered instance a unique ID, and inherits its semantic parent from the nearest annotated ancestor. Keep one `lookinSwiftUIInspector()` modifier near the hierarchy root. Use the explicit `lookinInspectable` modifier only for custom IDs or editable bindings. The macro remains available to the compiler in Release builds, but expands to the original body without a runtime probe call.
 
 # Repository
 LookinServer: https://github.com/QMUI/LookinServer
@@ -100,7 +99,7 @@ Lookin 可以查看与修改 iOS App 里的 UI 对象，类似于 Xcode 自带�
 
 ## 实验性 SwiftUI 语义层级
 
-`develop` 分支支持把显式标注的 SwiftUI 语义节点接入 Lookin 现有层级与自定义属性协议，无需修改 macOS 客户端。用法见上方示例；请将 `import LookinServerSwift` 和相关 modifier 调用放在 `#if DEBUG` 中，并确保同一 inspector root 内的 ID 稳定且唯一。该桥接不会读取 SwiftUI 私有运行时树。
+`develop` 分支支持把 SwiftUI 语义节点接入 Lookin 现有层级与自定义属性协议，无需修改 macOS 客户端。使用 `@LookinInspectable` 标记 View 类型后，Debug 构建会自动包装 `body`、为每个渲染实例生成唯一 ID，并从最近的标记父节点继承语义层级。每棵层级只需在根部保留一次 `lookinSwiftUIInspector()`；只有需要自定义 ID 或可编辑 Binding 时才继续使用显式 `lookinInspectable` modifier。Release 构建仍需让编译器解析宏，但展开结果是原始 body，不会调用运行时 Probe。
 
 # 源代码仓库
 
