@@ -119,6 +119,7 @@
     NSArray *properties = dict[@"properties"];
     NSArray *subviews = dict[@"subviews"];
     NSString *danceSource = dict[@"lookin_source"];
+    NSString *semanticKind = dict[@"semanticKind"];
     
     if (![title isKindOfClass:[NSString class]]) {
         return nil;
@@ -134,6 +135,9 @@
     newItem.customInfo.subtitle = subtitle;
     newItem.customInfo.frameInWindow = frameValue;
     newItem.customInfo.danceuiSource = danceSource;
+    if ([semanticKind isKindOfClass:[NSString class]]) {
+        newItem.customInfo.semanticKind = semanticKind;
+    }
     newItem.customAttrGroupList = [LKS_CustomAttrGroupsMaker makeGroupsFromRawProperties:properties saveCustomSetter:self.saveAttrSetter];
     
     return newItem;

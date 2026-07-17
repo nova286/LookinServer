@@ -29,6 +29,7 @@
     newInstance.title = self.title;
     newInstance.subtitle = self.subtitle;
     newInstance.danceuiSource = self.danceuiSource;
+    newInstance.semanticKind = self.semanticKind;
     
     return newInstance;
 }
@@ -38,6 +39,7 @@
     [aCoder encodeObject:self.title forKey:@"title"];
     [aCoder encodeObject:self.subtitle forKey:@"subtitle"];
     [aCoder encodeObject:self.danceuiSource forKey:@"danceuiSource"];
+    [aCoder encodeObject:self.semanticKind forKey:@"semanticKind"];
 }
 
 - (instancetype)initWithCoder:(NSCoder *)aDecoder {
@@ -46,6 +48,7 @@
         self.title = [aDecoder decodeObjectForKey:@"title"];
         self.subtitle = [aDecoder decodeObjectForKey:@"subtitle"];
         self.danceuiSource = [aDecoder decodeObjectForKey:@"danceuiSource"];
+        self.semanticKind = [aDecoder decodeObjectForKey:@"semanticKind"];
     }
     return self;
 }

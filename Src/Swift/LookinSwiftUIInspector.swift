@@ -289,8 +289,10 @@ private final class LookinSwiftUIRootProbeView: UIView {
     func lookinCustomDebugInfos() -> [String: Any]? {
         guard let window = window else { return nil }
         let subviews = registry.rawSubviews(in: window)
-        return [
+        var semanticRoot: [String: Any] = [
             "title": inspectorTitle,
+            "subtitle": "SwiftUI Semantic Hierarchy",
+            "semanticKind": "swiftui-root",
             "properties": [
                 [
                     "section": "SwiftUI",
@@ -300,6 +302,11 @@ private final class LookinSwiftUIRootProbeView: UIView {
                 ],
             ],
             "subviews": subviews,
+        ]
+        semanticRoot["frameInWindow"] = NSValue(cgRect: convert(bounds, to: window))
+        return [
+            "title": inspectorTitle,
+            "subviews": [semanticRoot],
         ]
     }
 }
