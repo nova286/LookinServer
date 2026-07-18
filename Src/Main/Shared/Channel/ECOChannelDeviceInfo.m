@@ -12,8 +12,15 @@
 #include <net/if.h>
 #include <sys/utsname.h>
 
-static NSInteger const ECOINET_ADDRSTRLEN = 16;
-static NSInteger const ECOINET6_ADDRSTRLEN = 46;
+#if TARGET_OS_IPHONE
+@import UIKit;
+#endif
+
+enum {
+    ECOINET_ADDRSTRLEN = 16,
+    ECOINET6_ADDRSTRLEN = 46,
+};
+static NSString *const ECOMacDeviceIdentifierKey = @"LookinWirelessMacDeviceIdentifier";
 static NSString *_macUUIDString = nil;
 
 @interface ECOChannelDeviceInfo()
@@ -89,7 +96,12 @@ static NSString *_macUUIDString = nil;
 - (void)setupMacDeviceInfo {
     //uuid
     if (!_macUUIDString) {
-        _macUUIDString = [[NSUUID UUID] UUIDString];
+        NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+        _macUUIDString = [defaults stringForKey:ECOMacDeviceIdentifierKey];
+        if (!_macUUIDString.length) {
+            _macUUIDString = NSUUID.UUID.UUIDString;
+            [defaults setObject:_macUUIDString forKey:ECOMacDeviceIdentifierKey];
+        }
     }
     self.uuid = _macUUIDString;
     //设备
@@ -136,7 +148,7 @@ static NSString *_macUUIDString = nil;
                 continue; // deeply nested code harder to read
             }
             const struct sockaddr_in *addr = (const struct sockaddr_in*)interface->ifa_addr;
-            char addrBuf[ MAX(ECOINET_ADDRSTRLEN, ECOINET6_ADDRSTRLEN) ];
+            char addrBuf[ECOINET6_ADDRSTRLEN];
             if(addr && (addr->sin_family==AF_INET || addr->sin_family==AF_INET6)) {
                 NSString *name = [NSString stringWithUTF8String:interface->ifa_name];
                 NSString *type;
@@ -204,6 +216,10 @@ static NSString *_macUUIDString = nil;
         return YES;
     }
     return NO;
+}
+
+- (NSUInteger)hash {
+    return self.uuid.hash ^ self.appInfo.appId.hash;
 }
 
 @end

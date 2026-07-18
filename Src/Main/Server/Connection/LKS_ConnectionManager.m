@@ -16,10 +16,13 @@
 #import "LookinServerDefines.h"
 #import "LKS_TraceManager.h"
 #import "LKS_MultiplatformAdapter.h"
-#import "ECOChannelManager.h"
-
 #if LOOKIN_SERVER_WIRELESS
+#import "ECOChannelManager.h"
+#if __has_include(<CocoaAsyncSocket/GCDAsyncSocket.h>)
+#import <CocoaAsyncSocket/GCDAsyncSocket.h>
+#else
 @import CocoaAsyncSocket;
+#endif
 #endif
 
 NSString *const LKS_ConnectionDidEndNotificationName = @"LKS_ConnectionDidEndNotificationName";
@@ -29,12 +32,14 @@ NSString *const LKS_ConnectionDidEndNotificationName = @"LKS_ConnectionDidEndNot
 @property(nonatomic, weak) Lookin_PTChannel *peerChannel_;
 
 @property(nonatomic, strong) LKS_RequestHandler *requestHandler;
+#if LOOKIN_SERVER_WIRELESS
 @property(nonatomic, strong) LKS_RequestHandler *wirelessRequestHandler;
 
 @property(nonatomic, strong) ECOChannelManager *wirelessChannel;
 @property(nonatomic, strong) ECOChannelDeviceInfo *wirelessDevice;
 
 @property BOOL hasStartWirelessConnnection;
+#endif
 
 @end
 
@@ -79,7 +84,9 @@ NSString *const LKS_ConnectionDidEndNotificationName = @"LKS_ConnectionDidEndNot
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleGetLookinInfo:) name:@"GetLookinInfo" object:nil];
 
         self.requestHandler = [LKS_RequestHandler new];
+#if LOOKIN_SERVER_WIRELESS
         self.wirelessRequestHandler = LKS_RequestHandler.wireless;
+#endif
     }
     return self;
 }
@@ -97,9 +104,12 @@ NSString *const LKS_ConnectionDidEndNotificationName = @"LKS_ConnectionDidEndNot
 		__weak __typeof(self) weakSelf = self;
 		// 接收到数据回调
 		self.wirelessChannel.receivedBlock = ^(ECOChannelDeviceInfo *device, NSData *data, NSDictionary *extraInfo) {
-			NSLog(@"🚀 Lookin receivedBlock device:%@", device);
 			NSNumber *type = extraInfo[@"type"];
 			NSNumber *tag = extraInfo[@"tag"];
+			if (![type isKindOfClass:NSNumber.class] || ![tag isKindOfClass:NSNumber.class] ||
+				![weakSelf.wirelessRequestHandler canHandleRequestType:type.unsignedIntValue]) {
+				return;
+			}
 			id object = nil;
 			id unarchivedObject = [NSKeyedUnarchiver unarchiveObjectWithData:data];
 			if ([unarchivedObject isKindOfClass:[LookinConnectionAttachment class]]) {
@@ -114,32 +124,29 @@ NSString *const LKS_ConnectionDidEndNotificationName = @"LKS_ConnectionDidEndNot
 		};
 		// 设备连接变更
 		self.wirelessChannel.deviceBlock = ^(ECOChannelDeviceInfo *device, BOOL isConnected) {
-			NSLog(@"🚀 Lookin deviceBlock device:%@", device);
 			if ([device isEqual:weakSelf.wirelessDevice] && !isConnected) {
 				weakSelf.wirelessDevice = nil;
 			}
 		};
 		// 授权状态变更回调
 		self.wirelessChannel.authStateChangedBlock = ^(ECOChannelDeviceInfo *device, ECOAuthorizeResponseType authState) {
-			NSLog(@"🚀 Lookin authStateChangedBlock device:%@ authState:%ld", device, authState);
 			if (authState == ECOAuthorizeResponseType_AllowAlways) {
 				weakSelf.wirelessDevice = device;
 			}
 		};
 		// 请求授权状态认证回调
 		self.wirelessChannel.requestAuthBlock = ^(ECOChannelDeviceInfo *device, ECOAuthorizeResponseType authState) {
-			NSLog(@"🚀 Lookin requestAuthBlock device:%@ authState:%ld", device, authState);
-			NSString *title = @"Lookin 连接请求";
-			NSString *message = [NSString stringWithFormat:@"%@ 的Lookin想要连接你的设备，如果你想启用调试功能，请选择允许", device.hostName ?: device.ipAddress];
+			NSString *title = @"Lookin Connection Request";
+			NSString *message = [NSString stringWithFormat:@"Lookin on %@ wants to inspect this app over your local network. Only allow a computer you trust.", device.hostName.length ? device.hostName : @"a Mac"];
 			UIAlertController *alertController = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
-			UIAlertAction *denyAction = [UIAlertAction actionWithTitle:@"拒绝" style:UIAlertActionStyleCancel handler:^(UIAlertAction * _Nonnull action) {
+			UIAlertAction *denyAction = [UIAlertAction actionWithTitle:@"Deny" style:UIAlertActionStyleCancel handler:^(UIAlertAction * _Nonnull action) {
 				[weakSelf.wirelessChannel sendAuthorizationMessageToDevice:device state:ECOAuthorizeResponseType_Deny showAuthAlert:NO];
 			}];
-			UIAlertAction *allowOnceAction = [UIAlertAction actionWithTitle:@"允许一次" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+			UIAlertAction *allowOnceAction = [UIAlertAction actionWithTitle:@"Allow Once" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
 				[weakSelf.wirelessChannel sendAuthorizationMessageToDevice:device state:ECOAuthorizeResponseType_AllowOnce showAuthAlert:NO];
 				weakSelf.wirelessDevice = device;
 			}];
-			UIAlertAction *allowAlwaysAction = [UIAlertAction actionWithTitle:@"始终允许" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+			UIAlertAction *allowAlwaysAction = [UIAlertAction actionWithTitle:@"Always Allow" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
 				[weakSelf.wirelessChannel sendAuthorizationMessageToDevice:device state:ECOAuthorizeResponseType_AllowAlways showAuthAlert:NO];
 				weakSelf.wirelessDevice = device;
 			}];
@@ -148,7 +155,7 @@ NSString *const LKS_ConnectionDidEndNotificationName = @"LKS_ConnectionDidEndNot
 			[alertController addAction:allowAlwaysAction];
 
 			dispatch_async(dispatch_get_main_queue(), ^{
-				UIViewController *rootVC = [UIApplication sharedApplication].keyWindow.rootViewController;
+				UIViewController *rootVC = [LKS_MultiplatformAdapter keyWindow].rootViewController;
 				[rootVC presentViewController:alertController animated:YES completion:nil];
 			});
 		};
@@ -281,9 +288,11 @@ NSString *const LKS_ConnectionDidEndNotificationName = @"LKS_ConnectionDidEndNot
 - (void)_sendData:(NSObject *)data frameOfType:(uint32_t)frameOfType tag:(uint32_t)tag isWireless:(BOOL)isWireless {
 	NSData *archivedData = [NSKeyedArchiver archivedDataWithRootObject:data];
     if (isWireless) {
+#if LOOKIN_SERVER_WIRELESS
         if (self.wirelessDevice.isConnected) {
             [self.wirelessChannel sendPacket:archivedData extraInfo:@{@"tag": @(tag), @"type": @(frameOfType)} toDevice:self.wirelessDevice];
         }
+#endif
     } else {
         if (self.peerChannel_) {
             dispatch_data_t payload = [archivedData createReferencingDispatchData];

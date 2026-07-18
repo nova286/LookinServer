@@ -8,6 +8,10 @@
 
 #import "ECOChannelAppInfo.h"
 
+#if TARGET_OS_IPHONE
+@import UIKit;
+#endif
+
 static NSString *_ecoUniqueAppId = nil;
 static NSString *_ecoUniqueAppName = nil;
 

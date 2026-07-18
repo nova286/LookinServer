@@ -28,6 +28,9 @@ let package = Package(
             name: "LookinServer",
             dependencies: [.target(name: "LookinServerSwift")],
             path: "Src/Main",
+            // Wireless transport is intentionally CocoaPods-only for now. Keeping it
+            // out of the default product prevents local-network access in normal SPM builds.
+            exclude: ["Shared/Channel"],
             publicHeadersPath: "",
             cSettings: [
                 .headerSearchPath("**"),

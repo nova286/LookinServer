@@ -73,6 +73,7 @@ Temporary Items
 ### SwiftPackageManager ###
 Packages
 .build/
+Package.resolved
 xcuserdata
 DerivedData/
 #*.xcodeproj

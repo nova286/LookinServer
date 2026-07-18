@@ -22,6 +22,46 @@ To use Lookin macOS app, you need to integrate LookinServer (iOS Framework of Lo
 ## via Swift Package Manager:
 `https://github.com/QMUI/LookinServer/`
 
+## Experimental wireless connection
+
+Wireless inspection is opt-in, CocoaPods-only, and intended for Debug builds on a trusted local network. The transport is not encrypted. The iOS app asks for confirmation before accepting a new Mac, and remembered devices are validated independently on both sides.
+
+```ruby
+# Swift + wireless inspection
+pod 'LookinServer',
+    :git => 'https://github.com/nova286/LookinServer.git',
+    :subspecs => ['SwiftAndWireless'],
+    :configurations => ['Debug']
+
+# Objective-C + wireless inspection
+# pod 'LookinServer', :git => 'https://github.com/nova286/LookinServer.git',
+#     :subspecs => ['Wireless'], :configurations => ['Debug']
+```
+
+Add the following declarations to the inspected app's `Info.plist`:
+
+```xml
+<key>NSLocalNetworkUsageDescription</key>
+<string>Connect to Lookin on your Mac for local UI inspection.</string>
+<key>NSBonjourServices</key>
+<array>
+    <string>_Lookin._tcp</string>
+</array>
+```
+
+Start discovery explicitly after the app is active. This is intentionally not automatic, so merely linking the subspec does not request local-network permission:
+
+```swift
+#if DEBUG
+NotificationCenter.default.post(
+    name: Notification.Name("Lookin_startWirelessConnection"),
+    object: nil
+)
+#endif
+```
+
+Post `Lookin_endWirelessConnection` to stop it. The default `Core`/`Swift` subspecs and the default Swift Package Manager product do not compile the wireless transport or CocoaAsyncSocket.
+
 ## Experimental SwiftUI semantic hierarchy
 
 The `codex/swiftui-attached-macro` branch can expose opt-in SwiftUI semantic nodes through Lookin's existing hierarchy and custom-attribute protocol. The matching macOS client fork adds a dedicated hierarchy mode and automatic refresh after edits.
@@ -102,6 +142,14 @@ Lookin 可以查看与修改 iOS App 里的 UI 对象，类似于 Xcode 自带�
 
 ## 通过 Swift Package Manager:
 `https://github.com/QMUI/LookinServer/`
+
+## 实验性无线连接
+
+无线检查能力是显式可选的，目前仅支持 CocoaPods，且只应在可信局域网的 Debug 构建中启用。传输内容没有加密；首次连接新 Mac 时 iOS App 会要求用户确认，“始终允许”会在两端分别校验已记住的设备身份。
+
+Swift 项目使用 `SwiftAndWireless` subspec，Objective-C 项目使用 `Wireless` subspec，并继续通过 `:configurations => ['Debug']` 限制构建配置。示例见上方英文文档。
+
+被检查 App 的 `Info.plist` 必须声明 `NSLocalNetworkUsageDescription`，并在 `NSBonjourServices` 中加入 `_Lookin._tcp`。App 启动并进入 active 状态后，发送 `Lookin_startWirelessConnection` 通知才会开始发现设备；发送 `Lookin_endWirelessConnection` 可停止。该能力不会自动启动，默认 `Core`/`Swift` subspec 与默认 SPM product 都不会编译无线通道或引入 CocoaAsyncSocket。
 
 ## 实验性 SwiftUI 语义层级
 

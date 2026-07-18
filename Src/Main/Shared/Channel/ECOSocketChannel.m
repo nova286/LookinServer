@@ -7,7 +7,6 @@
 //
 
 #import "ECOSocketChannel.h"
-#import <CocoaAsyncSocket/GCDAsyncSocket.h>
 #import <pthread.h>
 #include <string.h>
 
@@ -16,10 +15,18 @@
 
 #import "LookinDefines.h"
 
+#if __has_include(<CocoaAsyncSocket/GCDAsyncSocket.h>)
+#import <CocoaAsyncSocket/GCDAsyncSocket.h>
+#else
+@import CocoaAsyncSocket;
+#endif
+
 //static uint16_t const  ECOClientSockeListenPortNumber = 23235;
 //static uint16_t const  ECOSocketAcceptPortNumber = 23234;
 static CGFloat const ECOSocketRetryListenDelay   = 1.f;
 static NSInteger const ECOSocketHeadOffsetValue  = 10;
+static NSUInteger const ECOSocketMaximumHeaderLength = 16 * 1024;
+static NSUInteger const ECOSocketMaximumPayloadLength = 64 * 1024 * 1024;
 static NSString *const ECHOAuthorizedDevicesKey = @"echoAuthorizedDevicesKey";
 
 @interface ECOSocketChannel()
@@ -235,6 +242,9 @@ static NSString *const ECHOAuthorizedDevicesKey = @"echoAuthorizedDevicesKey";
 - (void)sendAuthorizationMessageToDevice:(ECOChannelDeviceInfo *)device
                                     state:(ECOAuthorizeResponseType)responseType
                            showAuthAlert:(BOOL)showAuthAlert {
+    if (responseType < ECOAuthorizeResponseType_Deny || responseType > ECOAuthorizeResponseType_AllowAlways) {
+        return;
+    }
     //修改数据
     ECOChannelDeviceInfo *authDevice = device;
     device.showAuthAlert = showAuthAlert;
@@ -285,6 +295,18 @@ static NSString *const ECHOAuthorizedDevicesKey = @"echoAuthorizedDevicesKey";
         }
     }
 #else
+    NSString *identifier = [self trustedIdentifierForDevice:device];
+    if (identifier.length) {
+        if (responseType == ECOAuthorizeResponseType_AllowAlways) {
+            if (![self.whitelistDevices containsObject:identifier]) {
+                [self.whitelistDevices addObject:identifier];
+                [self saveWhiteListDevices];
+            }
+        } else if ([self.whitelistDevices containsObject:identifier]) {
+            [self.whitelistDevices removeObject:identifier];
+            [self saveWhiteListDevices];
+        }
+    }
     if ([self.delegate respondsToSelector:@selector(channel:device:didChangedAuthState:)]) {
         [self.delegate channel:self device:device didChangedAuthState:responseType];
     }
@@ -336,7 +358,7 @@ static NSString *const ECHOAuthorizedDevicesKey = @"echoAuthorizedDevicesKey";
     //        NSLog(@"%s",__func__);
 #if TARGET_OS_IPHONE
     //读取数据
-    [sock readDataToData:[GCDAsyncSocket CRLFData] withTimeout:-1 tag:ECOSocketHeadTag_Device];
+    [self readHeaderFromSocket:sock tag:ECOSocketHeadTag_Device];
 #endif
 }
 
@@ -346,14 +368,14 @@ static NSString *const ECHOAuthorizedDevicesKey = @"echoAuthorizedDevicesKey";
     [self p_lock];
     [self.sockets addObject:newSocket];
     newSocket.delegate = self;
-    [newSocket readDataToData:[GCDAsyncSocket CRLFData] withTimeout:-1 tag:ECOSocketHeadTag_Device];
+    [self readHeaderFromSocket:newSocket tag:ECOSocketHeadTag_Device];
     [self p_unlock];
     //发送设备信息
     [self sendDeviceInfo:newSocket hostName:nil];
 #else
     [self.clientSockets addObject:newSocket];
     newSocket.delegate = self;
-    [newSocket readDataToData:[GCDAsyncSocket CRLFData] withTimeout:-1 tag:ECOSocketHeadTag_ClientListen];
+    [self readHeaderFromSocket:newSocket tag:ECOSocketHeadTag_ClientListen];
 #endif
 }
 
@@ -362,28 +384,54 @@ static NSString *const ECHOAuthorizedDevicesKey = @"echoAuthorizedDevicesKey";
     if (tag == ECOSocketHeadTag_Data ||
         tag == ECOSocketHeadTag_Device ||
         tag == ECOSocketHeadTag_ClientListen) {
-        NSData *headerData = [data subdataWithRange:NSMakeRange(0, data.length - [GCDAsyncSocket CRLFData].length)];
-        NSDictionary *header = [NSJSONSerialization JSONObjectWithData:headerData options:NSJSONReadingAllowFragments error:nil];
+        NSUInteger delimiterLength = GCDAsyncSocket.CRLFData.length;
+        if (data.length <= delimiterLength) {
+            [sock disconnect];
+            return;
+        }
+        NSData *headerData = [data subdataWithRange:NSMakeRange(0, data.length - delimiterLength)];
+        id headerObject = [NSJSONSerialization JSONObjectWithData:headerData options:0 error:nil];
+        if (![headerObject isKindOfClass:NSDictionary.class]) {
+            [sock disconnect];
+            return;
+        }
+        NSDictionary *header = headerObject;
         NSInteger version = [header[@"version"] integerValue];
-        if (version < ECOSocketProtocolVersion) {
+        if (version != ECOSocketProtocolVersion) {
+            [sock disconnect];
             return;
         }
         NSInteger length = [header[@"len"] integerValue];
         NSInteger mainType = [header[@"mType"] integerValue];
+        if (length <= 0 || length > ECOSocketMaximumPayloadLength) {
+            [sock disconnect];
+            return;
+        }
         if (mainType == ECOHeadMainType_Authorization) {
             [sock readDataToLength:length withTimeout:-1 tag:ECOSocketDataTag_Authorization];
         }else if(mainType == ECOHeadMainType_Data) {
             ECOChannelDeviceInfo *deviceInfo = sock.userData;
-            NSDictionary *extraInfo = header[@"extra"];
+            if (tag == ECOSocketHeadTag_Data && !deviceInfo) {
+                [sock disconnect];
+                return;
+            }
+            id extraObject = header[@"extra"];
+            NSDictionary *extraInfo = [extraObject isKindOfClass:NSDictionary.class] ? extraObject : nil;
             deviceInfo.extraData = extraInfo;
             [sock readDataToLength:length withTimeout:-1 tag:tag + ECOSocketHeadOffsetValue];
         }else if (mainType == ECOHeadMainType_ClientListen) {
             [sock readDataToLength:length withTimeout:-1 tag:tag + ECOSocketHeadOffsetValue];
+        } else {
+            [sock disconnect];
         }
         return;
     }
     if (tag == ECOSocketDataTag_Device) {
         ECOChannelDeviceInfo *deviceInfo = [[ECOChannelDeviceInfo alloc] initWithData:data];
+        if (![self hasValidIdentity:deviceInfo]) {
+            [sock disconnect];
+            return;
+        }
         sock.userData = deviceInfo;
 #if TARGET_OS_OSX
         NSString *uniId = [NSString stringWithFormat:@"%@_%@",deviceInfo.uuid, deviceInfo.appInfo.appId];
@@ -401,6 +449,10 @@ static NSString *const ECHOAuthorizedDevicesKey = @"echoAuthorizedDevicesKey";
     }
     if (tag == ECOSocketDataTag_ClientListen) {
         ECOChannelDeviceInfo *deviceInfo = [[ECOChannelDeviceInfo alloc] initWithData:data];
+        if (![self hasValidIdentity:deviceInfo]) {
+            [sock disconnect];
+            return;
+        }
         BOOL isConnected = [self isEchoConnectedOfDevice:deviceInfo];
         if (!isConnected) {
             [self connectToIPAddress:deviceInfo.ipAddress];
@@ -414,10 +466,17 @@ static NSString *const ECHOAuthorizedDevicesKey = @"echoAuthorizedDevicesKey";
         //授权信息
         ECOChannelDeviceInfo *deviceInfo = sock.userData;
         ECOChannelDeviceInfo *tempDevice = [[ECOChannelDeviceInfo alloc] initWithData:data];
+        if (![self hasValidIdentity:deviceInfo] || ![self hasValidIdentity:tempDevice] ||
+            tempDevice.authorizedType < ECOAuthorizeResponseType_Deny ||
+            tempDevice.authorizedType > ECOAuthorizeResponseType_AllowAlways) {
+            [sock disconnect];
+            return;
+        }
         BOOL isAlwaysAllow = tempDevice.authorizedType == ECOAuthorizeResponseType_AllowAlways;
 #if TARGET_OS_IPHONE
         deviceInfo.hostName = tempDevice.hostName;
-        if (tempDevice.showAuthAlert) {
+        BOOL canReconnectSilently = isAlwaysAllow && [self isPersistentlyTrustedDevice:deviceInfo];
+        if (tempDevice.showAuthAlert || !canReconnectSilently) {
             //弹窗提示用户
             if ([self.delegate respondsToSelector:@selector(channel:device:willRequestAuthState:)]) {
                 [self.delegate channel:self device:deviceInfo willRequestAuthState:tempDevice.authorizedType];
@@ -463,7 +522,7 @@ static NSString *const ECHOAuthorizedDevicesKey = @"echoAuthorizedDevicesKey";
         }
     }
     //读取下次发送的数据
-    [sock readDataToData:[GCDAsyncSocket CRLFData] withTimeout:-1 tag:ECOSocketHeadTag_Data];
+    [self readHeaderFromSocket:sock tag:ECOSocketHeadTag_Data];
 }
 - (void)socketDidDisconnect:(GCDAsyncSocket *)sock withError:(nullable NSError *)err {
 //    NSLog(@"%s",__func__);
@@ -487,6 +546,29 @@ static NSString *const ECHOAuthorizedDevicesKey = @"echoAuthorizedDevicesKey";
     }
 }
 #pragma mark - helper
+- (void)readHeaderFromSocket:(GCDAsyncSocket *)socket tag:(long)tag {
+    [socket readDataToData:GCDAsyncSocket.CRLFData
+               withTimeout:-1
+                  maxLength:ECOSocketMaximumHeaderLength
+                        tag:tag];
+}
+
+- (NSString *)trustedIdentifierForDevice:(ECOChannelDeviceInfo *)device {
+    if (!device.uuid.length || !device.appInfo.appId.length) {
+        return nil;
+    }
+    return [NSString stringWithFormat:@"%@_%@", device.uuid, device.appInfo.appId];
+}
+
+- (BOOL)hasValidIdentity:(ECOChannelDeviceInfo *)device {
+    return device.uuid.length > 0 && device.appInfo.appId.length > 0;
+}
+
+- (BOOL)isPersistentlyTrustedDevice:(ECOChannelDeviceInfo *)device {
+    NSString *identifier = [self trustedIdentifierForDevice:device];
+    return identifier.length && [self.whitelistDevices containsObject:identifier];
+}
+
 - (void)p_lock {
     [_socketLock lock];
 }

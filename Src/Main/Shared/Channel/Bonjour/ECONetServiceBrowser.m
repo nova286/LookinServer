@@ -77,19 +77,20 @@ NSNetServiceBrowserDelegate>
     if (@available(iOS 14.0, *)) {
         NSNetServicesError errorCode = [errorDict[@"NSNetServicesErrorCode"] integerValue];
         if (errorCode == -72008) {
-            //iOS14新增本地网络隐私权限，提示用户如何设置并忽略
+            // Explain the required local-network declarations and stop retrying.
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.f * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                NSString *title = @"Echo 连接提示";
-                NSString *message = @"由于iOS14本地网络权限限制，请在Info.plist中设置NSLocalNetworkUsageDescription和NSBonjourServices，详细内容见：https://github.com/didi/echo";
+                NSString *title = @"Local Network Access Required";
+                NSString *message = @"Wireless inspection requires local-network permission plus NSLocalNetworkUsageDescription and _Lookin._tcp in NSBonjourServices.";
                 UIAlertController *alertController = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
-                UIAlertAction *confirmAction = [UIAlertAction actionWithTitle:@"好的" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+                UIAlertAction *confirmAction = [UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
 
                 }];
                 [alertController addAction:confirmAction];
-                UIViewController *rootVC = [UIApplication sharedApplication].keyWindow.rootViewController;
+                UIWindow *window = UIApplication.sharedApplication.windows.firstObject;
+                UIViewController *rootVC = window.rootViewController;
                 [rootVC presentViewController:alertController animated:YES completion:nil];
             });
-            NSLog(@">>Echo Warning：Bonjour服务错误，由于iOS14本地网络权限限制，请在Info.plist中设置NSLocalNetworkUsageDescription和NSBonjourServices，详细内容见：https://github.com/didi/echo");
+            NSLog(@"Lookin wireless inspection needs local-network permission and Bonjour declarations.");
             return;
         }
     }
