@@ -18,6 +18,7 @@
 @property(nonatomic, weak) CALayer *layer;
 @property(nonatomic, assign) BOOL saveAttrSetter;
 @property(nonatomic, strong) NSMutableArray *allSubitems;
+@property(nonatomic, strong) UIImage *windowScreenshot;
 
 @end
 
@@ -119,6 +120,8 @@
     NSArray *properties = dict[@"properties"];
     NSArray *subviews = dict[@"subviews"];
     NSString *danceSource = dict[@"lookin_source"];
+    NSString *semanticKind = dict[@"semanticKind"];
+    NSString *semanticIdentifier = dict[@"semanticIdentifier"];
     
     if (![title isKindOfClass:[NSString class]]) {
         return nil;
@@ -134,9 +137,68 @@
     newItem.customInfo.subtitle = subtitle;
     newItem.customInfo.frameInWindow = frameValue;
     newItem.customInfo.danceuiSource = danceSource;
+    if ([semanticKind isKindOfClass:[NSString class]]) {
+        newItem.customInfo.semanticKind = semanticKind;
+    }
+    if ([semanticIdentifier isKindOfClass:[NSString class]]) {
+        newItem.customInfo.semanticIdentifier = semanticIdentifier;
+    }
+    if ([semanticKind isEqualToString:@"swiftui-root"]) {
+        UIImage *screenshot = [self screenshotForFrameValue:frameValue];
+        if (screenshot) {
+            newItem.soloScreenshot = screenshot;
+            newItem.groupScreenshot = screenshot;
+            newItem.screenshotEncodeType = LookinDisplayItemImageEncodeTypeNSData;
+        }
+    }
     newItem.customAttrGroupList = [LKS_CustomAttrGroupsMaker makeGroupsFromRawProperties:properties saveCustomSetter:self.saveAttrSetter];
     
     return newItem;
+}
+
+- (UIImage *)screenshotForFrameValue:(NSValue *)frameValue {
+    if (![frameValue isKindOfClass:[NSValue class]]) {
+        return nil;
+    }
+    UIWindow *window = self.layer.lks_hostView.window;
+    if (!window) {
+        return nil;
+    }
+    if (!self.windowScreenshot) {
+        self.windowScreenshot = [window.layer lks_groupScreenshotWithLowQuality:YES];
+    }
+    CGImageRef sourceImage = self.windowScreenshot.CGImage;
+    CGRect windowBounds = window.bounds;
+    CGRect frame = CGRectIntersection(frameValue.CGRectValue, windowBounds);
+    if (!sourceImage || CGRectIsNull(frame) || CGRectIsEmpty(frame)) {
+        return nil;
+    }
+
+    CGFloat scaleX = CGImageGetWidth(sourceImage) / CGRectGetWidth(windowBounds);
+    CGFloat scaleY = CGImageGetHeight(sourceImage) / CGRectGetHeight(windowBounds);
+    CGRect pixelRect = CGRectMake(
+        (CGRectGetMinX(frame) - CGRectGetMinX(windowBounds)) * scaleX,
+        (CGRectGetMinY(frame) - CGRectGetMinY(windowBounds)) * scaleY,
+        CGRectGetWidth(frame) * scaleX,
+        CGRectGetHeight(frame) * scaleY
+    );
+    pixelRect = CGRectIntersection(
+        CGRectIntegral(pixelRect),
+        CGRectMake(0, 0, CGImageGetWidth(sourceImage), CGImageGetHeight(sourceImage))
+    );
+    if (CGRectIsNull(pixelRect) || CGRectIsEmpty(pixelRect)) {
+        return nil;
+    }
+
+    CGImageRef croppedImage = CGImageCreateWithImageInRect(sourceImage, pixelRect);
+    if (!croppedImage) {
+        return nil;
+    }
+    UIImage *result = [UIImage imageWithCGImage:croppedImage
+                                         scale:self.windowScreenshot.scale
+                                   orientation:self.windowScreenshot.imageOrientation];
+    CGImageRelease(croppedImage);
+    return result;
 }
 
 @end

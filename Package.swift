@@ -1,12 +1,13 @@
-// swift-tools-version:5.3
+// swift-tools-version:5.10
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
+import CompilerPluginSupport
 
 let package = Package(
     name: "LookinServer",
     platforms: [
-        .iOS(.v9),.tvOS(.v9)
+        .iOS(.v9), .macOS(.v10_15), .tvOS(.v9)
     ],
     products: [
         // Products define the executables and libraries a package produces, and make them visible to other packages.
@@ -15,8 +16,10 @@ let package = Package(
             targets: ["LookinServer"]),
     ],
     dependencies: [
-        // Dependencies declare other packages that this package depends on.
-        // .package(url: /* package url */, from: "1.0.0"),
+        .package(
+            url: "https://github.com/swiftlang/swift-syntax.git",
+            exact: "603.0.2"
+        ),
     ],
     targets: [
         // Targets are the basic building blocks of a package. A target can define a module or a test suite.
@@ -47,7 +50,10 @@ let package = Package(
         ),
         .target(
             name: "LookinServerSwift",
-            dependencies: [.target(name: "LookinServerBase")],
+            dependencies: [
+                .target(name: "LookinServerBase"),
+                .target(name: "LookinServerMacros"),
+            ],
             path: "Src/Swift",
             cxxSettings: [
                 .define("SHOULD_COMPILE_LOOKIN_SERVER", to: "1", .when(configuration: .debug)),
@@ -57,6 +63,17 @@ let package = Package(
                 .define("SHOULD_COMPILE_LOOKIN_SERVER", .when(configuration: .debug)),
                 .define("SPM_LOOKIN_SERVER_ENABLED", .when(configuration: .debug))
             ]
+        ),
+        .macro(
+            name: "LookinServerMacros",
+            dependencies: [
+                .product(name: "SwiftCompilerPlugin", package: "swift-syntax"),
+                .product(name: "SwiftDiagnostics", package: "swift-syntax"),
+                .product(name: "SwiftSyntax", package: "swift-syntax"),
+                .product(name: "SwiftSyntaxBuilder", package: "swift-syntax"),
+                .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
+            ],
+            path: "Src/Macros"
         ),
         .target(
             name: "LookinServerBase",
