@@ -268,6 +268,14 @@ private struct LookinSwiftUINodeModifier: ViewModifier {
 
     @Environment(\.lookinSwiftUIRegistry) private var registry
     @Environment(\.lookinSwiftUIParentID) private var inheritedParentID
+    @State private var debugWidth = 0.0
+    @State private var debugHeight = 0.0
+    @State private var debugOffsetX = 0.0
+    @State private var debugOffsetY = 0.0
+    @State private var debugScale = 1.0
+    @State private var debugIsHidden = false
+    @State private var debugOpacity = 1.0
+    @State private var debugBackgroundColor = UIColor.clear
 
     func body(content: Content) -> some View {
         content
@@ -281,12 +289,39 @@ private struct LookinSwiftUINodeModifier: ViewModifier {
                             parentID: explicitParentID ?? inheritedParentID,
                             title: title,
                             source: source,
-                            properties: properties
+                            properties: properties + debugOverrideProperties
                         )
                         .allowsHitTesting(false)
                     }
                 }
             )
+            .modifier(debugOverridesModifier)
+    }
+
+    private var debugOverrideProperties: [LookinSwiftUIProperty] {
+        lookinSwiftUIDebugOverrideProperties(
+            width: $debugWidth,
+            height: $debugHeight,
+            offsetX: $debugOffsetX,
+            offsetY: $debugOffsetY,
+            scale: $debugScale,
+            isHidden: $debugIsHidden,
+            opacity: $debugOpacity,
+            backgroundColor: $debugBackgroundColor
+        )
+    }
+
+    private var debugOverridesModifier: LookinSwiftUIDebugOverridesModifier {
+        LookinSwiftUIDebugOverridesModifier(
+            width: debugWidth,
+            height: debugHeight,
+            offsetX: debugOffsetX,
+            offsetY: debugOffsetY,
+            scale: debugScale,
+            isHidden: debugIsHidden,
+            opacity: debugOpacity,
+            backgroundColor: debugBackgroundColor
+        )
     }
 }
 
@@ -298,6 +333,14 @@ private struct LookinSwiftUIAutomaticNodeModifier: ViewModifier {
     @Environment(\.lookinSwiftUIRegistry) private var registry
     @Environment(\.lookinSwiftUIParentID) private var inheritedParentID
     @State private var instanceID = UUID().uuidString
+    @State private var debugWidth = 0.0
+    @State private var debugHeight = 0.0
+    @State private var debugOffsetX = 0.0
+    @State private var debugOffsetY = 0.0
+    @State private var debugScale = 1.0
+    @State private var debugIsHidden = false
+    @State private var debugOpacity = 1.0
+    @State private var debugBackgroundColor = UIColor.clear
 
     func body(content: Content) -> some View {
         let id = "lookin.macro.\(title).\(instanceID)"
@@ -312,13 +355,134 @@ private struct LookinSwiftUIAutomaticNodeModifier: ViewModifier {
                             parentID: inheritedParentID,
                             title: title,
                             source: source,
-                            properties: []
+                            properties: debugOverrideProperties
                         )
                         .allowsHitTesting(false)
                     }
                 }
             )
+            .modifier(debugOverridesModifier)
     }
+
+    private var debugOverrideProperties: [LookinSwiftUIProperty] {
+        lookinSwiftUIDebugOverrideProperties(
+            width: $debugWidth,
+            height: $debugHeight,
+            offsetX: $debugOffsetX,
+            offsetY: $debugOffsetY,
+            scale: $debugScale,
+            isHidden: $debugIsHidden,
+            opacity: $debugOpacity,
+            backgroundColor: $debugBackgroundColor
+        )
+    }
+
+    private var debugOverridesModifier: LookinSwiftUIDebugOverridesModifier {
+        LookinSwiftUIDebugOverridesModifier(
+            width: debugWidth,
+            height: debugHeight,
+            offsetX: debugOffsetX,
+            offsetY: debugOffsetY,
+            scale: debugScale,
+            isHidden: debugIsHidden,
+            opacity: debugOpacity,
+            backgroundColor: debugBackgroundColor
+        )
+    }
+}
+
+@available(iOS 13.0, *)
+private struct LookinSwiftUIDebugOverridesModifier: ViewModifier {
+    let width: Double
+    let height: Double
+    let offsetX: Double
+    let offsetY: Double
+    let scale: Double
+    let isHidden: Bool
+    let opacity: Double
+    let backgroundColor: UIColor
+
+    func body(content: Content) -> some View {
+        content
+            .frame(
+                width: width > 0 ? CGFloat(width) : nil,
+                height: height > 0 ? CGFloat(height) : nil
+            )
+            .background(Color(backgroundColor))
+            .scaleEffect(CGFloat(scale))
+            .offset(x: CGFloat(offsetX), y: CGFloat(offsetY))
+            .opacity(isHidden ? 0 : opacity)
+            .allowsHitTesting(!isHidden)
+    }
+}
+
+@available(iOS 13.0, *)
+private func lookinSwiftUIDebugOverrideProperties(
+    width: Binding<Double>,
+    height: Binding<Double>,
+    offsetX: Binding<Double>,
+    offsetY: Binding<Double>,
+    scale: Binding<Double>,
+    isHidden: Binding<Bool>,
+    opacity: Binding<Double>,
+    backgroundColor: Binding<UIColor>
+) -> [LookinSwiftUIProperty] {
+    [
+        .number(
+            section: "SwiftUI Layout Overrides",
+            title: "Width (0 = Auto)",
+            value: lookinClampedBinding(width, range: 0...10_000)
+        ),
+        .number(
+            section: "SwiftUI Layout Overrides",
+            title: "Height (0 = Auto)",
+            value: lookinClampedBinding(height, range: 0...10_000)
+        ),
+        .number(
+            section: "SwiftUI Layout Overrides",
+            title: "Offset X",
+            value: lookinClampedBinding(offsetX, range: -10_000...10_000)
+        ),
+        .number(
+            section: "SwiftUI Layout Overrides",
+            title: "Offset Y",
+            value: lookinClampedBinding(offsetY, range: -10_000...10_000)
+        ),
+        .number(
+            section: "SwiftUI Layout Overrides",
+            title: "Scale",
+            value: lookinClampedBinding(scale, range: 0.05...10)
+        ),
+        .bool(
+            section: "SwiftUI Appearance Overrides",
+            title: "Hidden",
+            value: isHidden
+        ),
+        .number(
+            section: "SwiftUI Appearance Overrides",
+            title: "Opacity",
+            value: lookinClampedBinding(opacity, range: 0...1)
+        ),
+        .color(
+            section: "SwiftUI Appearance Overrides",
+            title: "Background Color",
+            value: backgroundColor
+        ),
+    ]
+}
+
+@available(iOS 13.0, *)
+private func lookinClampedBinding(
+    _ binding: Binding<Double>,
+    range: ClosedRange<Double>
+) -> Binding<Double> {
+    Binding(
+        get: { binding.wrappedValue },
+        set: { newValue in
+            guard newValue.isFinite else { return }
+            binding.wrappedValue = min(max(newValue, range.lowerBound), range.upperBound)
+        }
+    )
 }
 
 @available(iOS 13.0, *)
@@ -400,6 +564,7 @@ private final class LookinSwiftUIRootProbeView: UIView {
             "title": inspectorTitle,
             "subtitle": "SwiftUI Semantic Hierarchy",
             "semanticKind": "swiftui-root",
+            "semanticIdentifier": "lookin.swiftui.root.\(inspectorTitle)",
             "properties": properties,
             "subviews": subviews,
         ]
@@ -649,14 +814,27 @@ private final class LookinSwiftUIRegistry {
         ]
         properties.append(contentsOf: entry.properties.map { $0.makeRawDictionary() })
 
+        var frameInWindow: CGRect?
+        if let probeView = entry.probeView {
+            let frame = probeView.convert(probeView.bounds, to: window)
+            frameInWindow = frame
+            properties.append(contentsOf: [
+                lookinSwiftUIGeometryProperty(title: "X", value: frame.origin.x),
+                lookinSwiftUIGeometryProperty(title: "Y", value: frame.origin.y),
+                lookinSwiftUIGeometryProperty(title: "Width", value: frame.width),
+                lookinSwiftUIGeometryProperty(title: "Height", value: frame.height),
+            ])
+        }
+
         var dictionary: [String: Any] = [
             "title": entry.title,
             "subtitle": entry.source,
+            "semanticKind": "swiftui-node",
+            "semanticIdentifier": entry.id,
             "properties": properties,
         ]
 
-        if let probeView = entry.probeView {
-            let frame = probeView.convert(probeView.bounds, to: window)
+        if let frame = frameInWindow {
             dictionary["frameInWindow"] = NSValue(cgRect: frame)
         }
 
@@ -675,6 +853,18 @@ private final class LookinSwiftUIRegistry {
         }
 
         return dictionary
+    }
+
+    private func lookinSwiftUIGeometryProperty(
+        title: String,
+        value: CGFloat
+    ) -> [String: Any] {
+        [
+            "section": "SwiftUI Current Geometry",
+            "title": title,
+            "value": NSNumber(value: Double(value)),
+            "valueType": "number",
+        ]
     }
 }
 

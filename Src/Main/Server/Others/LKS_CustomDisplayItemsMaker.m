@@ -121,6 +121,7 @@
     NSArray *subviews = dict[@"subviews"];
     NSString *danceSource = dict[@"lookin_source"];
     NSString *semanticKind = dict[@"semanticKind"];
+    NSString *semanticIdentifier = dict[@"semanticIdentifier"];
     
     if (![title isKindOfClass:[NSString class]]) {
         return nil;
@@ -138,6 +139,9 @@
     newItem.customInfo.danceuiSource = danceSource;
     if ([semanticKind isKindOfClass:[NSString class]]) {
         newItem.customInfo.semanticKind = semanticKind;
+    }
+    if ([semanticIdentifier isKindOfClass:[NSString class]]) {
+        newItem.customInfo.semanticIdentifier = semanticIdentifier;
     }
     if ([semanticKind isEqualToString:@"swiftui-root"]) {
         UIImage *screenshot = [self screenshotForFrameValue:frameValue];

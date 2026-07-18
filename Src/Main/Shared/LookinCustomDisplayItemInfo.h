@@ -17,6 +17,8 @@
 @property(nonatomic, copy) NSString *danceuiSource;
 /// Optional machine-readable role for custom hierarchy consumers.
 @property(nonatomic, copy) NSString *semanticKind;
+/// Optional stable identifier used to preserve semantic hierarchy UI state.
+@property(nonatomic, copy) NSString *semanticIdentifier;
 
 @end
 
