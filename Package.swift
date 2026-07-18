@@ -20,17 +20,21 @@ let package = Package(
             url: "https://github.com/swiftlang/swift-syntax.git",
             exact: "603.0.2"
         ),
+        .package(
+            url: "https://github.com/robbiehanson/CocoaAsyncSocket.git",
+            exact: "7.6.5"
+        ),
     ],
     targets: [
         // Targets are the basic building blocks of a package. A target can define a module or a test suite.
         // Targets can depend on other targets in this package, and on products in packages this package depends on.
         .target(
             name: "LookinServer",
-            dependencies: [.target(name: "LookinServerSwift")],
+            dependencies: [
+                .target(name: "LookinServerSwift"),
+                .product(name: "CocoaAsyncSocket", package: "CocoaAsyncSocket"),
+            ],
             path: "Src/Main",
-            // Wireless transport is intentionally CocoaPods-only for now. Keeping it
-            // out of the default product prevents local-network access in normal SPM builds.
-            exclude: ["Shared/Channel"],
             publicHeadersPath: "",
             cSettings: [
                 .headerSearchPath("**"),
@@ -45,10 +49,14 @@ let package = Package(
                 .headerSearchPath("Shared/Category"),
                 .headerSearchPath("Shared/Message"),
                 .headerSearchPath("Shared/Peertalk"),
+                .define("SHOULD_COMPILE_LOOKIN_SERVER", to: "1", .when(configuration: .debug)),
+                .define("SPM_LOOKIN_SERVER_ENABLED", to: "1", .when(configuration: .debug)),
+                .define("LOOKIN_SERVER_WIRELESS", to: "1", .when(configuration: .debug)),
             ],
             cxxSettings: [
                 .define("SHOULD_COMPILE_LOOKIN_SERVER", to: "1", .when(configuration: .debug)),
-                .define("SPM_LOOKIN_SERVER_ENABLED", to: "1", .when(configuration: .debug))
+                .define("SPM_LOOKIN_SERVER_ENABLED", to: "1", .when(configuration: .debug)),
+                .define("LOOKIN_SERVER_WIRELESS", to: "1", .when(configuration: .debug))
             ]
         ),
         .target(

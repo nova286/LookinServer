@@ -41,6 +41,9 @@ static NSString *const ECHOAuthorizedDevicesKey = @"echoAuthorizedDevicesKey";
 @property (nonatomic, strong) GCDAsyncSocket *cSocket;
 @property (nonatomic, strong) NSMutableArray *clientSockets;
 @property (nonatomic, assign) BOOL stopped;
+#if TARGET_OS_IPHONE
+@property (nonatomic, assign) BOOL browserReconnectScheduled;
+#endif
 
 @end
 
@@ -171,7 +174,15 @@ static NSString *const ECHOAuthorizedDevicesKey = @"echoAuthorizedDevicesKey";
         return;
     }
     GCDAsyncSocket *socket = [[GCDAsyncSocket alloc] initWithDelegate:self delegateQueue:dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0)];
-    NSData *address = [addresses objectAtIndex:0];
+    // Bonjour may return an unreachable IPv6 address before the LAN IPv4 address.
+    // Prefer IPv4 for the current local-network protocol and fall back to IPv6.
+    NSData *address = [addresses firstObject];
+    for (NSData *candidate in addresses) {
+        if ([GCDAsyncSocket isIPv4Address:candidate]) {
+            address = candidate;
+            break;
+        }
+    }
     NSError *error = nil;
     BOOL connected = [socket connectToAddress:address error:&error];
     if (connected) {
@@ -415,6 +426,7 @@ static NSString *const ECHOAuthorizedDevicesKey = @"echoAuthorizedDevicesKey";
         tag == ECOSocketHeadTag_ClientListen) {
         NSUInteger delimiterLength = GCDAsyncSocket.CRLFData.length;
         if (data.length <= delimiterLength) {
+            NSLog(@">> [ECOSocketChannel] rejecting empty socket header");
             [sock disconnect];
             return;
         }
@@ -427,6 +439,7 @@ static NSString *const ECHOAuthorizedDevicesKey = @"echoAuthorizedDevicesKey";
         NSDictionary *header = headerObject;
         NSInteger version = [header[@"version"] integerValue];
         if (version != ECOSocketProtocolVersion) {
+            NSLog(@">> [ECOSocketChannel] rejecting protocol version: %@", header[@"version"]);
             [sock disconnect];
             return;
         }
@@ -458,6 +471,7 @@ static NSString *const ECHOAuthorizedDevicesKey = @"echoAuthorizedDevicesKey";
     if (tag == ECOSocketDataTag_Device) {
         ECOChannelDeviceInfo *deviceInfo = [[ECOChannelDeviceInfo alloc] initWithData:data];
         if (![self hasValidIdentity:deviceInfo]) {
+            NSLog(@">> [ECOSocketChannel] rejecting peer without stable identity: %@", deviceInfo);
             [sock disconnect];
             return;
         }
@@ -493,7 +507,7 @@ static NSString *const ECHOAuthorizedDevicesKey = @"echoAuthorizedDevicesKey";
         //授权信息
         ECOChannelDeviceInfo *deviceInfo = sock.userData;
         ECOChannelDeviceInfo *tempDevice = [[ECOChannelDeviceInfo alloc] initWithData:data];
-        if (![self hasValidIdentity:deviceInfo] || ![self hasValidIdentity:tempDevice] ||
+        if (![self hasValidIdentity:deviceInfo] || ![self authorizationDeviceMatchesLocalDevice:tempDevice] ||
             tempDevice.authorizedType < ECOAuthorizeResponseType_Deny ||
             tempDevice.authorizedType > ECOAuthorizeResponseType_AllowAlways) {
             [sock disconnect];
@@ -552,7 +566,9 @@ static NSString *const ECHOAuthorizedDevicesKey = @"echoAuthorizedDevicesKey";
     [self readHeaderFromSocket:sock tag:ECOSocketHeadTag_Data];
 }
 - (void)socketDidDisconnect:(GCDAsyncSocket *)sock withError:(nullable NSError *)err {
-//    NSLog(@"%s",__func__);
+    if (err) {
+        NSLog(@">> [ECOSocketChannel] socket disconnected: %@", err);
+    }
     [self p_lock];
     [sock setDelegate:nil];
     if ([self.sockets containsObject:sock]) {
@@ -571,8 +587,32 @@ static NSString *const ECHOAuthorizedDevicesKey = @"echoAuthorizedDevicesKey";
     if (sock == self.mSocket) {
         [self restartListening];
     }
+#if TARGET_OS_IPHONE
+    [self scheduleBrowserReconnectIfNeeded];
+#endif
 }
 #pragma mark - helper
+#if TARGET_OS_IPHONE
+- (void)scheduleBrowserReconnectIfNeeded {
+    [self p_lock];
+    BOOL shouldSchedule = !self.stopped && self.sockets.count == 0 && !self.browserReconnectScheduled;
+    if (shouldSchedule) {
+        self.browserReconnectScheduled = YES;
+    }
+    [self p_unlock];
+    if (!shouldSchedule) {
+        return;
+    }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(ECOSocketRetryListenDelay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        self.browserReconnectScheduled = NO;
+        if (!self.stopped && self.sockets.count == 0) {
+            [self.browser stopBrowsing];
+            [self.browser startBrowsing];
+        }
+    });
+}
+#endif
+
 - (void)readHeaderFromSocket:(GCDAsyncSocket *)socket tag:(long)tag {
     [socket readDataToData:GCDAsyncSocket.CRLFData
                withTimeout:-1
@@ -581,14 +621,39 @@ static NSString *const ECHOAuthorizedDevicesKey = @"echoAuthorizedDevicesKey";
 }
 
 - (NSString *)trustedIdentifierForDevice:(ECOChannelDeviceInfo *)device {
-    if (!device.uuid.length || !device.appInfo.appId.length) {
+    if (!device.uuid.length) {
+        return nil;
+    }
+#if TARGET_OS_OSX
+    if (!device.appInfo.appId.length) {
         return nil;
     }
     return [NSString stringWithFormat:@"%@_%@", device.uuid, device.appInfo.appId];
+#else
+    return device.uuid;
+#endif
 }
 
 - (BOOL)hasValidIdentity:(ECOChannelDeviceInfo *)device {
+#if TARGET_OS_OSX
     return device.uuid.length > 0 && device.appInfo.appId.length > 0;
+#else
+    // The macOS client intentionally does not advertise an inspected-app identity.
+    return device.uuid.length > 0;
+#endif
+}
+
+- (BOOL)authorizationDeviceMatchesLocalDevice:(ECOChannelDeviceInfo *)device {
+    ECOChannelDeviceInfo *localDevice = [ECOChannelDeviceInfo new];
+    if (!device.uuid.length || ![device.uuid isEqualToString:localDevice.uuid]) {
+        return NO;
+    }
+#if TARGET_OS_IPHONE
+    return device.appInfo.appId.length > 0 &&
+        [device.appInfo.appId isEqualToString:localDevice.appInfo.appId];
+#else
+    return YES;
+#endif
 }
 
 - (BOOL)isPersistentlyTrustedDevice:(ECOChannelDeviceInfo *)device {
