@@ -42,7 +42,6 @@ typedef void(^ECOChannelRequestAuthStateBlock)(ECOChannelDeviceInfo *device, ECO
  发送数据包
 
  @param packet 数据包
- @param type 数据包类型，json或者普通数据包
  @param extraInfo 透传信息
  @param device 要接收消息的设备，如果传入nil，则对所有已授权连接的设备发送消息
  */
