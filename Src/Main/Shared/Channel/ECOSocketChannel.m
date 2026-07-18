@@ -40,6 +40,7 @@ static NSString *const ECHOAuthorizedDevicesKey = @"echoAuthorizedDevicesKey";
 //Client端主动连接的监听socket
 @property (nonatomic, strong) GCDAsyncSocket *cSocket;
 @property (nonatomic, strong) NSMutableArray *clientSockets;
+@property (nonatomic, assign) BOOL stopped;
 
 @end
 
@@ -106,6 +107,9 @@ static NSString *const ECHOAuthorizedDevicesKey = @"echoAuthorizedDevicesKey";
     }
 }
 - (void)startListening {
+    if (self.stopped) {
+        return;
+    }
     [self p_lock];
     [self.sockets removeAllObjects];
     [self p_unlock];
@@ -131,8 +135,33 @@ static NSString *const ECHOAuthorizedDevicesKey = @"echoAuthorizedDevicesKey";
 //重试监听
 - (void)restartListening {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(ECOSocketRetryListenDelay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        [self startListening];
+        if (!self.stopped) {
+            [self startListening];
+        }
     });
+}
+
+- (void)stop {
+    self.stopped = YES;
+    [self.browser stopBrowsing];
+    [self.publisher stopPublishing];
+
+    [self.mSocket setDelegate:nil];
+    [self.mSocket disconnect];
+    self.mSocket = nil;
+    [self.cSocket setDelegate:nil];
+    [self.cSocket disconnect];
+    self.cSocket = nil;
+
+    [self p_lock];
+    NSArray<GCDAsyncSocket *> *sockets = [self.sockets arrayByAddingObjectsFromArray:self.clientSockets];
+    [self.sockets removeAllObjects];
+    [self.clientSockets removeAllObjects];
+    [self p_unlock];
+    for (GCDAsyncSocket *socket in sockets) {
+        [socket setDelegate:nil];
+        [socket disconnect];
+    }
 }
 #pragma mark - Socket连接
 //Client侧连接Mac侧

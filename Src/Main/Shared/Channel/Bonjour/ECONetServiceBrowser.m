@@ -40,6 +40,13 @@ NSNetServiceBrowserDelegate>
     [self.serviceBrowser setDelegate:self];
     [self.serviceBrowser searchForServicesOfType:LookinNetServiceType inDomain:LookinNetServiceDomain];
 }
+- (void)stopBrowsing {
+    [self.serviceBrowser stop];
+    self.serviceBrowser.delegate = nil;
+    self.serviceBrowser = nil;
+    [self.services makeObjectsPerformSelector:@selector(stop)];
+    [self.services removeAllObjects];
+}
 //重置查找服务
 - (void)resetBrowserService {
     [self.serviceBrowser stop];

@@ -26,4 +26,6 @@ typedef void(^ECOUSBChannelDidAttachBlock)(NSString *ipAddress);
 
 @property (nonatomic, copy) ECOUSBChannelDidAttachBlock attachBlock;
 
+- (void)stop;
+
 @end

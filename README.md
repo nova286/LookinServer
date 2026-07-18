@@ -24,7 +24,7 @@ To use Lookin macOS app, you need to integrate LookinServer (iOS Framework of Lo
 
 ## Experimental wireless connection
 
-Wireless inspection is opt-in, CocoaPods-only, and intended for Debug builds on a trusted local network. The transport is not encrypted. The iOS app asks for confirmation before accepting a new Mac, and remembered devices are validated independently on both sides.
+Wireless inspection is opt-in, CocoaPods-only, and intended for Debug builds on a trusted local network. The transport is not encrypted or cryptographically authenticated. The iOS app asks for confirmation before accepting a new Mac, and remembered device identifiers are checked independently on both sides. One Mac may inspect an app over wireless at a time.
 
 ```ruby
 # Swift + wireless inspection
@@ -60,7 +60,7 @@ NotificationCenter.default.post(
 #endif
 ```
 
-Post `Lookin_endWirelessConnection` to stop it. The default `Core`/`Swift` subspecs and the default Swift Package Manager product do not compile the wireless transport or CocoaAsyncSocket.
+Post `Lookin_endWirelessConnection` to stop discovery, close active wireless transports, and forget the current session. The default `Core`/`Swift` subspecs and the default Swift Package Manager product do not compile the wireless transport or CocoaAsyncSocket.
 
 ## Experimental SwiftUI semantic hierarchy
 
@@ -145,11 +145,11 @@ Lookin 可以查看与修改 iOS App 里的 UI 对象，类似于 Xcode 自带�
 
 ## 实验性无线连接
 
-无线检查能力是显式可选的，目前仅支持 CocoaPods，且只应在可信局域网的 Debug 构建中启用。传输内容没有加密；首次连接新 Mac 时 iOS App 会要求用户确认，“始终允许”会在两端分别校验已记住的设备身份。
+无线检查能力是显式可选的，目前仅支持 CocoaPods，且只应在可信局域网的 Debug 构建中启用。传输内容没有加密，设备标识也不是密码学身份证明；首次连接新 Mac 时 iOS App 会要求用户确认，“始终允许”会在两端分别校验已记住的设备标识。同一时刻仅允许一台 Mac 通过无线方式检查当前 App。
 
 Swift 项目使用 `SwiftAndWireless` subspec，Objective-C 项目使用 `Wireless` subspec，并继续通过 `:configurations => ['Debug']` 限制构建配置。示例见上方英文文档。
 
-被检查 App 的 `Info.plist` 必须声明 `NSLocalNetworkUsageDescription`，并在 `NSBonjourServices` 中加入 `_Lookin._tcp`。App 启动并进入 active 状态后，发送 `Lookin_startWirelessConnection` 通知才会开始发现设备；发送 `Lookin_endWirelessConnection` 可停止。该能力不会自动启动，默认 `Core`/`Swift` subspec 与默认 SPM product 都不会编译无线通道或引入 CocoaAsyncSocket。
+被检查 App 的 `Info.plist` 必须声明 `NSLocalNetworkUsageDescription`，并在 `NSBonjourServices` 中加入 `_Lookin._tcp`。App 启动并进入 active 状态后，发送 `Lookin_startWirelessConnection` 通知才会开始发现设备；发送 `Lookin_endWirelessConnection` 会停止发现、关闭当前无线通道并清理本次会话。该能力不会自动启动，默认 `Core`/`Swift` subspec 与默认 SPM product 都不会编译无线通道或引入 CocoaAsyncSocket。
 
 ## 实验性 SwiftUI 语义层级
 

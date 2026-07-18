@@ -57,4 +57,6 @@ static const int ECOHeadSubType_Data = 1;
                                     state:(ECOAuthorizeResponseType)responseType
                            showAuthAlert:(BOOL)showAuthAlert;
 
+- (void)stop;
+
 @end

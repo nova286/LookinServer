@@ -35,6 +35,11 @@
     self.netService.delegate = self;
     [self.netService publish];
 }
+- (void)stopPublishing {
+    [self.netService stop];
+    self.netService.delegate = nil;
+    self.netService = nil;
+}
 #pragma mark - NSNetServiceDelegate methods
 /* Sent to the NSNetService instance's delegate when the publication of the instance is complete and successful.
  */

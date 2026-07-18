@@ -65,4 +65,7 @@ typedef void(^ECOChannelRequestAuthStateBlock)(ECOChannelDeviceInfo *device, ECO
 //链接IP地址的主机
 - (void)connectToClientIPAddress:(NSString *)ipAddress;
 
+/// Stop discovery/listening and close active transports.
+- (void)stop;
+
 @end

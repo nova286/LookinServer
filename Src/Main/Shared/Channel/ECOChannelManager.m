@@ -41,6 +41,10 @@
 - (void)connectToClientIPAddress:(NSString *)ipAddress {
     [self.socketChannel autoConnectToClientIPAddress:ipAddress];
 }
+- (void)stop {
+    [self.socketChannel stop];
+    [self.ptChannel stop];
+}
 #pragma mark - 数据传输
 //发送数据
 - (void)sendPacket:(NSData *)packet

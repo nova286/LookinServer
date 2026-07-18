@@ -11,5 +11,6 @@
 @interface ECONetServicePublisher : NSObject
 
 - (void)startPublish;
+- (void)stopPublishing;
 
 @end

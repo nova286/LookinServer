@@ -110,51 +110,61 @@ NSString *const LKS_ConnectionDidEndNotificationName = @"LKS_ConnectionDidEndNot
 				![weakSelf.wirelessRequestHandler canHandleRequestType:type.unsignedIntValue]) {
 				return;
 			}
-			id object = nil;
-			id unarchivedObject = [NSKeyedUnarchiver unarchiveObjectWithData:data];
-			if ([unarchivedObject isKindOfClass:[LookinConnectionAttachment class]]) {
-				LookinConnectionAttachment *attachment = (LookinConnectionAttachment *)unarchivedObject;
-				object = attachment.data;
-			} else {
-				object = unarchivedObject;
-			}
 			dispatch_async(dispatch_get_main_queue(), ^{
+				if (![device isEqual:weakSelf.wirelessDevice]) {
+					return;
+				}
+				id object = nil;
+				id unarchivedObject = [NSKeyedUnarchiver unarchiveObjectWithData:data];
+				if ([unarchivedObject isKindOfClass:[LookinConnectionAttachment class]]) {
+					object = ((LookinConnectionAttachment *)unarchivedObject).data;
+				} else {
+					object = unarchivedObject;
+				}
 				[weakSelf.wirelessRequestHandler handleRequestType:type.intValue tag:tag.intValue object:object];
 			});
 		};
 		// 设备连接变更
 		self.wirelessChannel.deviceBlock = ^(ECOChannelDeviceInfo *device, BOOL isConnected) {
-			if ([device isEqual:weakSelf.wirelessDevice] && !isConnected) {
-				weakSelf.wirelessDevice = nil;
-			}
+			dispatch_async(dispatch_get_main_queue(), ^{
+				if ([device isEqual:weakSelf.wirelessDevice] && !isConnected) {
+					weakSelf.wirelessDevice = nil;
+				}
+			});
 		};
 		// 授权状态变更回调
 		self.wirelessChannel.authStateChangedBlock = ^(ECOChannelDeviceInfo *device, ECOAuthorizeResponseType authState) {
-			if (authState == ECOAuthorizeResponseType_AllowAlways) {
-				weakSelf.wirelessDevice = device;
-			}
+			dispatch_async(dispatch_get_main_queue(), ^{
+				if (authState != ECOAuthorizeResponseType_AllowAlways) {
+					return;
+				}
+				if (!weakSelf.wirelessDevice.isConnected || [device isEqual:weakSelf.wirelessDevice]) {
+					weakSelf.wirelessDevice = device;
+				} else {
+					[weakSelf.wirelessChannel sendAuthorizationMessageToDevice:device state:ECOAuthorizeResponseType_Deny showAuthAlert:NO];
+				}
+			});
 		};
 		// 请求授权状态认证回调
 		self.wirelessChannel.requestAuthBlock = ^(ECOChannelDeviceInfo *device, ECOAuthorizeResponseType authState) {
-			NSString *title = @"Lookin Connection Request";
-			NSString *message = [NSString stringWithFormat:@"Lookin on %@ wants to inspect this app over your local network. Only allow a computer you trust.", device.hostName.length ? device.hostName : @"a Mac"];
-			UIAlertController *alertController = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
-			UIAlertAction *denyAction = [UIAlertAction actionWithTitle:@"Deny" style:UIAlertActionStyleCancel handler:^(UIAlertAction * _Nonnull action) {
-				[weakSelf.wirelessChannel sendAuthorizationMessageToDevice:device state:ECOAuthorizeResponseType_Deny showAuthAlert:NO];
-			}];
-			UIAlertAction *allowOnceAction = [UIAlertAction actionWithTitle:@"Allow Once" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
-				[weakSelf.wirelessChannel sendAuthorizationMessageToDevice:device state:ECOAuthorizeResponseType_AllowOnce showAuthAlert:NO];
-				weakSelf.wirelessDevice = device;
-			}];
-			UIAlertAction *allowAlwaysAction = [UIAlertAction actionWithTitle:@"Always Allow" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
-				[weakSelf.wirelessChannel sendAuthorizationMessageToDevice:device state:ECOAuthorizeResponseType_AllowAlways showAuthAlert:NO];
-				weakSelf.wirelessDevice = device;
-			}];
-			[alertController addAction:denyAction];
-			[alertController addAction:allowOnceAction];
-			[alertController addAction:allowAlwaysAction];
-
 			dispatch_async(dispatch_get_main_queue(), ^{
+				if (weakSelf.wirelessDevice.isConnected && ![device isEqual:weakSelf.wirelessDevice]) {
+					[weakSelf.wirelessChannel sendAuthorizationMessageToDevice:device state:ECOAuthorizeResponseType_Deny showAuthAlert:NO];
+					return;
+				}
+				NSString *message = [NSString stringWithFormat:@"Lookin on %@ wants to inspect this app over your local network. Only allow a computer you trust.", device.hostName.length ? device.hostName : @"a Mac"];
+				UIAlertController *alertController = [UIAlertController alertControllerWithTitle:@"Lookin Connection Request" message:message preferredStyle:UIAlertControllerStyleAlert];
+				[alertController addAction:[UIAlertAction actionWithTitle:@"Deny" style:UIAlertActionStyleCancel handler:^(__unused UIAlertAction *action) {
+					[weakSelf.wirelessChannel sendAuthorizationMessageToDevice:device state:ECOAuthorizeResponseType_Deny showAuthAlert:NO];
+				}]];
+				[alertController addAction:[UIAlertAction actionWithTitle:@"Allow Once" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+					weakSelf.wirelessDevice = device;
+					[weakSelf.wirelessChannel sendAuthorizationMessageToDevice:device state:ECOAuthorizeResponseType_AllowOnce showAuthAlert:NO];
+				}]];
+				[alertController addAction:[UIAlertAction actionWithTitle:@"Always Allow" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+					weakSelf.wirelessDevice = device;
+					[weakSelf.wirelessChannel sendAuthorizationMessageToDevice:device state:ECOAuthorizeResponseType_AllowAlways showAuthAlert:NO];
+				}]];
 				UIViewController *rootVC = [LKS_MultiplatformAdapter keyWindow].rootViewController;
 				[rootVC presentViewController:alertController animated:YES completion:nil];
 			});
@@ -165,13 +175,9 @@ NSString *const LKS_ConnectionDidEndNotificationName = @"LKS_ConnectionDidEndNot
 
 - (void)endWirelessConnection {
 	self.hasStartWirelessConnnection = NO;
-	GCDAsyncSocket *asyncSocket = [self.wirelessChannel valueForKeyPath:@"socketChannel.cSocket"];
-	if (asyncSocket) {
-		[asyncSocket setDelegate:nil];
-		[asyncSocket disconnect];
-		[self.wirelessChannel setValue:nil forKeyPath:@"socketChannel.cSocket"];
-	}
+	[self.wirelessChannel stop];
 	self.wirelessChannel = nil;
+	self.wirelessDevice = nil;
 }
 #endif
 

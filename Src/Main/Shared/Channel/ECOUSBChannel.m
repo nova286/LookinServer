@@ -36,11 +36,20 @@ static const NSTimeInterval ECOUSBChannelReconnectDelay = 1.0;
 
 #pragma mark - LifeCycle methods
 - (void)dealloc {
-    NSLog(@"%s",__func__);
-    if (self.serverChannel) {
-        [self.serverChannel close];
-    }
+    [self stop];
+}
+
+- (void)stop {
+    [NSObject cancelPreviousPerformRequestsWithTarget:self];
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [self.serverChannel close];
+    [self.peerChannel close];
+    [self.connectedChannel close];
+    self.serverChannel = nil;
+    self.peerChannel = nil;
+    self.connectedChannel = nil;
+    self.connectingToDeviceID = nil;
+    self.connectedDeviceID = nil;
 }
 //初始化
 - (void)setupChannel {

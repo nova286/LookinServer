@@ -15,5 +15,6 @@ typedef void(^ECONetServiceBrowserResolvedAddressesBlock)(NSArray<NSData *> *add
 @property (nonatomic, copy) ECONetServiceBrowserResolvedAddressesBlock addressesBlock;
 
 - (void)startBrowsing;
+- (void)stopBrowsing;
 
 @end
