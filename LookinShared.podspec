@@ -25,7 +25,13 @@ Pod::Spec.new do |spec|
   }
 
   spec.subspec 'Wireless' do |ss|
-    ss.source_files = 'Src/Main/Shared/Channel/**/*'
+    # The channel implementation imports shared protocol and Peertalk headers.
+    # A consumer may select this subspec directly (the macOS client does), so it
+    # must be self-contained instead of relying on LookinServer/Core.
+    ss.source_files = [
+      'Src/Main/Shared/**/*',
+      'Src/Base/**/*'
+    ]
     ss.dependency 'CocoaAsyncSocket'
     ss.pod_target_xcconfig = {
       'GCC_PREPROCESSOR_DEFINITIONS' => '$(inherited) SHOULD_COMPILE_LOOKIN_SERVER=1 LOOKIN_SERVER_WIRELESS=1'
