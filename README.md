@@ -5,6 +5,8 @@ You can inspect and modify views in iOS app via Lookin, just like UI Inspector i
 
 Official Website：https://lookin.work/
 
+Fork maintenance notes: [Imported Upstream Patches](UPSTREAM_PATCHES.md)
+
 # Integration Guide
 To use Lookin macOS app, you need to integrate LookinServer (iOS Framework of Lookin) into your iOS project.
 
