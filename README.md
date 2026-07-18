@@ -36,7 +36,7 @@ struct ContentView: View {
     var body: some View {
         VStack {
             TextField("Title", text: $title)
-#if DEBUG
+#if DEBUG || STAGING
                 .lookinInspectable(
                     id: "content.title",
                     properties: [.string(title: "Text", value: $title)]
@@ -44,21 +44,21 @@ struct ContentView: View {
 #endif
 
             Toggle("Enabled", isOn: $enabled)
-#if DEBUG
+#if DEBUG || STAGING
                 .lookinInspectable(
                     id: "content.enabled",
                     properties: [.bool(title: "Enabled", value: $enabled)]
                 )
 #endif
         }
-#if DEBUG
+#if DEBUG || STAGING
         .lookinSwiftUIInspector()
 #endif
     }
 }
 ```
 
-`@LookinInspectable` automatically wraps the type's `body` in Debug builds, gives each rendered instance a unique ID, and inherits its semantic parent from the nearest annotated ancestor. Keep one `lookinSwiftUIInspector()` modifier near the hierarchy root. Use the explicit `lookinInspectable` modifier only for custom IDs or editable bindings. The macro remains available to the compiler in Release builds, but expands to the original body without a runtime probe call.
+`@LookinInspectable` automatically wraps the type's `body` in Debug builds and in Staging builds that define `STAGING`, gives each rendered instance a unique ID, and inherits its semantic parent from the nearest annotated ancestor. Keep one `lookinSwiftUIInspector()` modifier near the hierarchy root. Use the explicit `lookinInspectable` modifier only for custom IDs or editable bindings. The macro remains available to the compiler in other builds, but expands to the original body without a runtime probe call.
 
 The inspector shows only registered semantic nodes by default. Pass `includeRuntimeNodes: true` to `lookinSwiftUIInspector` when you temporarily need SwiftUI's lower-level rendered debug nodes.
 
@@ -103,7 +103,7 @@ Lookin 可以查看与修改 iOS App 里的 UI 对象，类似于 Xcode 自带�
 
 ## 实验性 SwiftUI 语义层级
 
-`develop` 分支支持把 SwiftUI 语义节点接入 Lookin 现有层级与自定义属性协议；配套的 macOS 客户端 fork 提供独立的 SwiftUI 层级模式，并在修改属性后自动刷新。使用 `@LookinInspectable` 标记 View 类型后，Debug 构建会自动包装 `body`、为每个渲染实例生成唯一 ID，并从最近的标记父节点继承语义层级。每棵层级只需在根部保留一次 `lookinSwiftUIInspector()`；只有需要自定义 ID 或可编辑 Binding 时才继续使用显式 `lookinInspectable` modifier。Release 构建仍需让编译器解析宏，但展开结果是原始 body，不会调用运行时 Probe。
+`develop` 分支支持把 SwiftUI 语义节点接入 Lookin 现有层级与自定义属性协议；配套的 macOS 客户端 fork 提供独立的 SwiftUI 层级模式，并在修改属性后自动刷新。使用 `@LookinInspectable` 标记 View 类型后，Debug 构建以及显式定义 `STAGING` 的 Staging 构建会自动包装 `body`、为每个渲染实例生成唯一 ID，并从最近的标记父节点继承语义层级。每棵层级只需在根部保留一次 `lookinSwiftUIInspector()`；只有需要自定义 ID 或可编辑 Binding 时才继续使用显式 `lookinInspectable` modifier。其他构建仍需让编译器解析宏，但展开结果是原始 body，不会调用运行时 Probe。
 
 Inspector 默认只展示已注册的语义节点。如需临时查看 SwiftUI 底层渲染调试节点，可向 `lookinSwiftUIInspector` 传入 `includeRuntimeNodes: true`。
 

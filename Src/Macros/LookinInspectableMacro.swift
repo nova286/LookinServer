@@ -111,7 +111,7 @@ public struct LookinInspectableMacro: MemberAttributeMacro, MemberMacro {
             static func buildFinalResult<LookinBuiltContent: View>(
                 _ component: LookinBuiltContent
             ) -> some View {
-        #if DEBUG
+        #if DEBUG || STAGING
                 component._lookinAutomaticallyInspectable(
                     title: "\(typeName)",
                     fileID: #fileID,
