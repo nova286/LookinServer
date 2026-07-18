@@ -78,7 +78,6 @@
 }
 #pragma mark - ECOChannelConnectedDeviceProtocol methods
 - (void)channel:(ECOBaseChannel *)channel didConnectedToDevice:(ECOChannelDeviceInfo *)device {
-    NSLog(@">> [ECOChannelManager] did Connected to device:%@", [device description]);
 //    //状态回调
 //    if (device.authorizedType != ECOAuthorizeResponseType_Deny) {
 //        !self.connectBlock ?: self.connectBlock([self isConnected]);
@@ -87,7 +86,6 @@
     !self.deviceBlock ?: self.deviceBlock(device, YES);
 }
 - (void)channel:(ECOBaseChannel *)channel didDisconnectWithDevice:(ECOChannelDeviceInfo *)device {
-    NSLog(@">> [ECOChannelManager] did Disconnect to device:%@", [device description]);
 //    //状态回调
 //    if (device.authorizedType != ECOAuthorizeResponseType_Deny) {
 //        !self.connectBlock ?: self.connectBlock([self isConnected]);

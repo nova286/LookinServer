@@ -88,7 +88,6 @@ static const NSTimeInterval ECOUSBChannelReconnectDelay = 1.0;
 }
 - (void)onUSBDeviceDidAttach:(NSNotification *)note {
     NSNumber *deviceID = [note.userInfo objectForKey:@"DeviceID"];
-    NSLog(@"<< [ECOUSBChannel] PTUSBDeviceDidAttachNotification:%@", deviceID);
     //    [self showAlertWithMessage:[NSString stringWithFormat:@"usb设备连接:%@",deviceID]];
 
     dispatch_async(_notConnectedQueue, ^{
@@ -103,7 +102,6 @@ static const NSTimeInterval ECOUSBChannelReconnectDelay = 1.0;
 }
 - (void)onUSBDeviceDidDetach:(NSNotification *)note {
     NSNumber *deviceID = [note.userInfo objectForKey:@"DeviceID"];
-    NSLog(@"<< [ECOUSBChannel] PTUSBDeviceDidDetachNotification:%@", deviceID);
     //    [self showAlertWithMessage:[NSString stringWithFormat:@"usb设备断开:%@",deviceID]];
 
     if ([self.connectingToDeviceID isEqualToNumber:deviceID]) {
@@ -138,7 +136,6 @@ static const NSTimeInterval ECOUSBChannelReconnectDelay = 1.0;
             [self disconnectFromCurrentChannel];
             self.connectedChannel = channel;
             channel.userInfo = address;
-            NSLog(@"<< [ECOUSBChannel] Connected to %@", address);
         }
     }];
 }
@@ -169,7 +166,6 @@ static const NSTimeInterval ECOUSBChannelReconnectDelay = 1.0;
         }else{
             self.connectedDeviceID = self.connectingToDeviceID;
             self.connectedChannel = channel;
-            NSLog(@"<< [ECOUSBChannel] Connect to device #%@\n%@", channel.userInfo, self.connectedDeviceProperties);
             //发送ping信息
             [self ping];
         }
@@ -184,7 +180,6 @@ static const NSTimeInterval ECOUSBChannelReconnectDelay = 1.0;
 }
 
 - (void)didDisconnectFromDevice:(NSNumber*)deviceID {
-    NSLog(@"<< [ECOUSBChannel] Disconnected from device:%@", deviceID);
     if ([self.connectedDeviceID isEqualToNumber:deviceID]) {
         [self willChangeValueForKey:@"connectedDeviceID"];
         self.connectedDeviceID = nil;

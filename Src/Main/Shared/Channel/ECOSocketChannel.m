@@ -456,8 +456,6 @@ static NSString *const ECHOAuthorizedDevicesKey = @"echoAuthorizedDevicesKey";
         BOOL isConnected = [self isEchoConnectedOfDevice:deviceInfo];
         if (!isConnected) {
             [self connectToIPAddress:deviceInfo.ipAddress];
-        }else{
-            NSLog(@"当前Echo主机已连接:%@",deviceInfo.ipAddress);
         }
         [sock setDelegate:nil];
         [self.clientSockets removeObject:sock];
