@@ -6,6 +6,8 @@
 //  Description
 //
 
+#ifdef SHOULD_COMPILE_LOOKIN_SERVER
+
 #import "ECOChannelManager.h"
 
 @interface ECOChannelManager()
@@ -116,3 +118,5 @@
 }
 
 @end
+
+#endif /* SHOULD_COMPILE_LOOKIN_SERVER */
