@@ -6,6 +6,8 @@
 //  Description
 //
 
+#ifdef SHOULD_COMPILE_LOOKIN_SERVER
+
 #import "ECONetServiceBrowser.h"
 #import "LookinDefines.h"
 #if TARGET_OS_IPHONE
@@ -132,3 +134,5 @@ NSNetServiceBrowserDelegate>
 }
 
 @end
+
+#endif /* SHOULD_COMPILE_LOOKIN_SERVER */

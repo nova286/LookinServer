@@ -6,6 +6,8 @@
 //  Description
 //
 
+#ifdef SHOULD_COMPILE_LOOKIN_SERVER
+
 #import "ECOSocketChannel.h"
 #import <pthread.h>
 #include <string.h>
@@ -718,3 +720,5 @@ static NSString *const ECHOAuthorizedDevicesKey = @"echoAuthorizedDevicesKey";
     return _whitelistDevices;
 }
 @end
+
+#endif /* SHOULD_COMPILE_LOOKIN_SERVER */
