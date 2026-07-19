@@ -238,6 +238,50 @@ private extension EnvironmentValues {
 }
 
 @available(iOS 13.0, *)
+public extension EnvironmentValues {
+    /// Registers the concrete `UIView` created by a `UIViewRepresentable` as a
+    /// semantic child of the nearest SwiftUI inspector node. Call this from
+    /// both `makeUIView` and `updateUIView` so a late-installed inspector root
+    /// can still discover the representable.
+    @MainActor
+    @discardableResult
+    func lookinRegisterRepresentableHierarchy(
+        _ rootView: UIView,
+        title: String,
+        fileID: StaticString = #fileID,
+        line: UInt = #line
+    ) -> String? {
+        guard let registry = lookinSwiftUIRegistry else { return nil }
+        let identity = String(describing: ObjectIdentifier(rootView))
+        let id = "lookin.representable.\(title).\(identity)"
+        registry.upsert(
+            id: id,
+            parentID: lookinSwiftUIParentID,
+            title: title,
+            source: "\(String(describing: fileID)):\(line)",
+            properties: [],
+            probeView: rootView,
+            includesUIKitHierarchy: true
+        )
+        return id
+    }
+
+    /// Applies the current inspector registry to SwiftUI content hosted by a
+    /// manually-created `UIHostingController`.
+    @MainActor
+    func lookinAttachInspectorContext<Content: View>(
+        to content: Content
+    ) -> AnyView {
+        guard let registry = lookinSwiftUIRegistry else { return AnyView(content) }
+        return AnyView(
+            content
+                .environment(\.lookinSwiftUIRegistry, registry)
+                .environment(\.lookinSwiftUIParentID, lookinSwiftUIParentID)
+        )
+    }
+}
+
+@available(iOS 13.0, *)
 private struct LookinSwiftUIInspectorRootModifier: ViewModifier {
     let title: String
     let includeRuntimeNodes: Bool
@@ -696,6 +740,7 @@ private final class LookinSwiftUIRegistry {
         var title: String
         var source: String
         var properties: [LookinSwiftUIProperty]
+        var includesUIKitHierarchy: Bool
 
         init(
             id: String,
@@ -704,7 +749,8 @@ private final class LookinSwiftUIRegistry {
             parentID: String?,
             title: String,
             source: String,
-            properties: [LookinSwiftUIProperty]
+            properties: [LookinSwiftUIProperty],
+            includesUIKitHierarchy: Bool
         ) {
             self.id = id
             self.order = order
@@ -713,6 +759,7 @@ private final class LookinSwiftUIRegistry {
             self.title = title
             self.source = source
             self.properties = properties
+            self.includesUIKitHierarchy = includesUIKitHierarchy
         }
     }
 
@@ -725,7 +772,8 @@ private final class LookinSwiftUIRegistry {
         title: String,
         source: String,
         properties: [LookinSwiftUIProperty],
-        probeView: UIView
+        probeView: UIView,
+        includesUIKitHierarchy: Bool = false
     ) {
         if let entry = entries[id] {
             entry.probeView = probeView
@@ -733,6 +781,7 @@ private final class LookinSwiftUIRegistry {
             entry.title = title
             entry.source = source
             entry.properties = properties
+            entry.includesUIKitHierarchy = includesUIKitHierarchy
             return
         }
 
@@ -744,7 +793,8 @@ private final class LookinSwiftUIRegistry {
             parentID: parentID,
             title: title,
             source: source,
-            properties: properties
+            properties: properties,
+            includesUIKitHierarchy: includesUIKitHierarchy
         )
     }
 
@@ -838,7 +888,7 @@ private final class LookinSwiftUIRegistry {
             dictionary["frameInWindow"] = NSValue(cgRect: frame)
         }
 
-        let children = (childrenByParentID[entry.id] ?? [])
+        var children = (childrenByParentID[entry.id] ?? [])
             .filter { !nextVisited.contains($0.id) }
             .map {
                 rawDictionary(
@@ -848,11 +898,113 @@ private final class LookinSwiftUIRegistry {
                     visited: nextVisited
                 )
             }
+        if entry.includesUIKitHierarchy, let rootView = entry.probeView {
+            var remainingNodeCount = 300
+            children.append(contentsOf: rootView.subviews.flatMap {
+                rawUIKitDictionaries(
+                    for: $0,
+                    in: window,
+                    depth: 0,
+                    remainingNodeCount: &remainingNodeCount
+                )
+            })
+        }
         if !children.isEmpty {
             dictionary["subviews"] = children
         }
 
         return dictionary
+    }
+
+    private func rawUIKitDictionaries(
+        for view: UIView,
+        in window: UIWindow,
+        depth: Int,
+        remainingNodeCount: inout Int
+    ) -> [[String: Any]] {
+        guard depth <= 20, remainingNodeCount > 0, view.window === window else { return [] }
+        guard !view.isHidden, view.alpha > 0.01 else { return [] }
+        remainingNodeCount -= 1
+
+        let childDictionaries = view.subviews.flatMap {
+            rawUIKitDictionaries(
+                for: $0,
+                in: window,
+                depth: depth + 1,
+                remainingNodeCount: &remainingNodeCount
+            )
+        }
+        let frame = view.convert(view.bounds, to: window).standardized
+        guard Self.hasVisibleGeometry(frame, in: window), Self.shouldDisplayUIKitView(view) else {
+            return childDictionaries
+        }
+
+        let className = NSStringFromClass(type(of: view))
+        let shortClassName = className.split(separator: ".").last.map(String.init) ?? className
+        var dictionary: [String: Any] = [
+            "title": shortClassName,
+            "subtitle": className,
+            "semanticKind": "swiftui-representable-uikit-node",
+            "semanticIdentifier": "lookin.representable.uikit.\(String(describing: ObjectIdentifier(view)))",
+            "frameInWindow": NSValue(cgRect: frame),
+            "properties": [
+                [
+                    "section": "UIKit",
+                    "title": "Class",
+                    "value": className,
+                    "valueType": "string",
+                ],
+                [
+                    "section": "UIKit",
+                    "title": "Alpha",
+                    "value": NSNumber(value: Double(view.alpha)),
+                    "valueType": "number",
+                ],
+                [
+                    "section": "UIKit",
+                    "title": "User Interaction",
+                    "value": NSNumber(value: view.isUserInteractionEnabled),
+                    "valueType": "boolean",
+                ],
+            ],
+        ]
+        if !childDictionaries.isEmpty {
+            dictionary["subviews"] = childDictionaries
+        }
+        return [dictionary]
+    }
+
+    private static func hasVisibleGeometry(_ frame: CGRect, in window: UIWindow) -> Bool {
+        guard frame.origin.x.isFinite,
+              frame.origin.y.isFinite,
+              frame.size.width.isFinite,
+              frame.size.height.isFinite,
+              frame.width > 0,
+              frame.height > 0 else {
+            return false
+        }
+        return frame.intersects(window.bounds)
+    }
+
+    private static func shouldDisplayUIKitView(_ view: UIView) -> Bool {
+        if view is UIScrollView ||
+            view is UICollectionView ||
+            view is UICollectionViewCell ||
+            view is UIControl ||
+            view is UIImageView ||
+            view is UILabel ||
+            view is UIVisualEffectView {
+            return true
+        }
+
+        let className = NSStringFromClass(type(of: view))
+        guard let separator = className.firstIndex(of: ".") else { return false }
+        let moduleName = String(className[..<separator])
+        return moduleName != "LookinServerSwift" &&
+            moduleName != "SwiftUI" &&
+            moduleName != "SwiftUICore" &&
+            moduleName != "UIKit" &&
+            moduleName != "UIKitCore"
     }
 
     private func lookinSwiftUIGeometryProperty(
