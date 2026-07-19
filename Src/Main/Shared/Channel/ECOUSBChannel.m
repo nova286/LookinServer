@@ -6,6 +6,8 @@
 //  Description
 //
 
+#ifdef SHOULD_COMPILE_LOOKIN_SERVER
+
 #import "ECOUSBChannel.h"
 #import "Lookin_PTChannel.h"
 #import "ECOChannelDeviceInfo.h"
@@ -327,3 +329,5 @@ static dispatch_data_t ECOUSBChannelDispatchDataWithPayload(id payload) {
 }
 
 @end
+
+#endif /* SHOULD_COMPILE_LOOKIN_SERVER */

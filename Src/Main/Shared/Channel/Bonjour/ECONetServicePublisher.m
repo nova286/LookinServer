@@ -6,6 +6,8 @@
 //  Description
 //
 
+#ifdef SHOULD_COMPILE_LOOKIN_SERVER
+
 #import "ECONetServicePublisher.h"
 #import "LookinDefines.h"
 
@@ -53,3 +55,5 @@
 }
 
 @end
+
+#endif /* SHOULD_COMPILE_LOOKIN_SERVER */
