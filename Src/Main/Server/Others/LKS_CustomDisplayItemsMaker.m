@@ -23,8 +23,10 @@
 @property(nonatomic, copy) NSArray<NSDictionary<NSString *, id> *> *swiftUISnapshotCandidates;
 
 - (NSArray<NSDictionary<NSString *, id> *> *)swiftUISnapshotCandidatesFromRawArray:(NSArray *)rawArray;
-- (BOOL)shouldCaptureSwiftUINodeWithIdentifier:(NSString *)semanticIdentifier
-                                    frameValue:(NSValue *)frameValue;
+- (NSArray<NSValue *> *)exclusionFrameValuesForSwiftUINodeWithIdentifier:(NSString *)semanticIdentifier
+                                                               frameValue:(NSValue *)frameValue;
+- (UIImage *)screenshotForFrameValue:(NSValue *)frameValue
+                 excludingFrameValues:(NSArray<NSValue *> *)excludingFrameValues;
 
 @end
 
@@ -150,14 +152,15 @@
     if ([semanticIdentifier isKindOfClass:[NSString class]]) {
         newItem.customInfo.semanticIdentifier = semanticIdentifier;
     }
-    BOOL shouldCaptureSwiftUIScreenshot =
-        [semanticKind isEqualToString:@"swiftui-node"] &&
-        [self shouldCaptureSwiftUINodeWithIdentifier:semanticIdentifier frameValue:frameValue];
-    if (shouldCaptureSwiftUIScreenshot) {
-        UIImage *screenshot = [self screenshotForFrameValue:frameValue];
-        if (screenshot) {
-            newItem.soloScreenshot = screenshot;
-            newItem.groupScreenshot = screenshot;
+    if ([semanticKind isEqualToString:@"swiftui-node"]) {
+        UIImage *groupScreenshot = [self screenshotForFrameValue:frameValue];
+        NSArray<NSValue *> *exclusionFrameValues =
+            [self exclusionFrameValuesForSwiftUINodeWithIdentifier:semanticIdentifier frameValue:frameValue];
+        UIImage *soloScreenshot = [self screenshotForFrameValue:frameValue
+                                            excludingFrameValues:exclusionFrameValues];
+        if (groupScreenshot || soloScreenshot) {
+            newItem.soloScreenshot = soloScreenshot ?: groupScreenshot;
+            newItem.groupScreenshot = groupScreenshot ?: soloScreenshot;
             newItem.screenshotEncodeType = LookinDisplayItemImageEncodeTypeNSData;
         }
     }
@@ -191,18 +194,19 @@
     return result;
 }
 
-- (BOOL)shouldCaptureSwiftUINodeWithIdentifier:(NSString *)semanticIdentifier
-                                    frameValue:(NSValue *)frameValue {
+- (NSArray<NSValue *> *)exclusionFrameValuesForSwiftUINodeWithIdentifier:(NSString *)semanticIdentifier
+                                                               frameValue:(NSValue *)frameValue {
     if (![semanticIdentifier isKindOfClass:[NSString class]] ||
         ![frameValue isKindOfClass:[NSValue class]]) {
-        return NO;
+        return @[];
     }
     CGRect frame = CGRectStandardize(frameValue.CGRectValue);
     CGFloat frameArea = CGRectGetWidth(frame) * CGRectGetHeight(frame);
     if (CGRectIsNull(frame) || CGRectIsEmpty(frame) || !isfinite(frameArea) || frameArea <= 0) {
-        return NO;
+        return @[];
     }
 
+    NSMutableArray<NSValue *> *result = [NSMutableArray array];
     for (NSDictionary<NSString *, id> *candidate in self.swiftUISnapshotCandidates) {
         if ([candidate[@"semanticIdentifier"] isEqualToString:semanticIdentifier]) {
             continue;
@@ -216,13 +220,18 @@
         }
         CGRect overlap = CGRectIntersection(frame, candidateFrame);
         if (!CGRectIsNull(overlap) && !CGRectIsEmpty(overlap) && candidateArea <= frameArea) {
-            return NO;
+            [result addObject:candidateFrameValue];
         }
     }
-    return YES;
+    return result;
 }
 
 - (UIImage *)screenshotForFrameValue:(NSValue *)frameValue {
+    return [self screenshotForFrameValue:frameValue excludingFrameValues:@[]];
+}
+
+- (UIImage *)screenshotForFrameValue:(NSValue *)frameValue
+                 excludingFrameValues:(NSArray<NSValue *> *)excludingFrameValues {
     if (![frameValue isKindOfClass:[NSValue class]]) {
         return nil;
     }
@@ -235,7 +244,7 @@
     }
     CGImageRef sourceImage = self.windowScreenshot.CGImage;
     CGRect windowBounds = window.bounds;
-    CGRect frame = CGRectIntersection(frameValue.CGRectValue, windowBounds);
+    CGRect frame = CGRectIntersection(CGRectStandardize(frameValue.CGRectValue), windowBounds);
     if (!sourceImage || CGRectIsNull(frame) || CGRectIsEmpty(frame)) {
         return nil;
     }
@@ -264,7 +273,28 @@
                                          scale:self.windowScreenshot.scale
                                    orientation:self.windowScreenshot.imageOrientation];
     CGImageRelease(croppedImage);
-    return result;
+    if (!excludingFrameValues.count) {
+        return result;
+    }
+
+    UIGraphicsBeginImageContextWithOptions(result.size, NO, result.scale);
+    [result drawAtPoint:CGPointZero];
+    CGContextRef context = UIGraphicsGetCurrentContext();
+    CGContextSetBlendMode(context, kCGBlendModeClear);
+    for (NSValue *excludedFrameValue in excludingFrameValues) {
+        if (![excludedFrameValue isKindOfClass:[NSValue class]]) {
+            continue;
+        }
+        CGRect overlap = CGRectIntersection(frame, CGRectStandardize(excludedFrameValue.CGRectValue));
+        if (CGRectIsNull(overlap) || CGRectIsEmpty(overlap)) {
+            continue;
+        }
+        CGRect localRect = CGRectOffset(overlap, -CGRectGetMinX(frame), -CGRectGetMinY(frame));
+        CGContextFillRect(context, localRect);
+    }
+    UIImage *maskedResult = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return maskedResult ?: result;
 }
 
 @end
