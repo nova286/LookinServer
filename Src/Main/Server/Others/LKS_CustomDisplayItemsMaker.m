@@ -152,7 +152,14 @@
     if ([semanticIdentifier isKindOfClass:[NSString class]]) {
         newItem.customInfo.semanticIdentifier = semanticIdentifier;
     }
-    if ([semanticKind isEqualToString:@"swiftui-node"]) {
+    if ([semanticKind isEqualToString:@"swiftui-root"]) {
+        UIImage *rootScreenshot = [self screenshotForFrameValue:frameValue];
+        if (rootScreenshot) {
+            newItem.soloScreenshot = rootScreenshot;
+            newItem.groupScreenshot = rootScreenshot;
+            newItem.screenshotEncodeType = LookinDisplayItemImageEncodeTypeNSData;
+        }
+    } else if ([semanticKind isEqualToString:@"swiftui-node"]) {
         UIImage *groupScreenshot = [self screenshotForFrameValue:frameValue];
         NSArray<NSValue *> *exclusionFrameValues =
             [self exclusionFrameValuesForSwiftUINodeWithIdentifier:semanticIdentifier frameValue:frameValue];
