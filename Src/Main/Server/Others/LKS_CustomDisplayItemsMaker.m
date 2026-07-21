@@ -12,6 +12,7 @@
 #import "LookinDisplayItem.h"
 #import "NSArray+Lookin.h"
 #import "LKS_CustomAttrGroupsMaker.h"
+#import <math.h>
 
 @interface LKS_CustomDisplayItemsMaker ()
 
@@ -19,6 +20,11 @@
 @property(nonatomic, assign) BOOL saveAttrSetter;
 @property(nonatomic, strong) NSMutableArray *allSubitems;
 @property(nonatomic, strong) UIImage *windowScreenshot;
+@property(nonatomic, copy) NSArray<NSDictionary<NSString *, id> *> *swiftUISnapshotCandidates;
+
+- (NSArray<NSDictionary<NSString *, id> *> *)swiftUISnapshotCandidatesFromRawArray:(NSArray *)rawArray;
+- (BOOL)shouldCaptureSwiftUINodeWithIdentifier:(NSString *)semanticIdentifier
+                                    frameValue:(NSValue *)frameValue;
 
 @end
 
@@ -94,6 +100,7 @@
         return;
     }
     NSArray *rawSubviews = data[@"subviews"];
+    self.swiftUISnapshotCandidates = [self swiftUISnapshotCandidatesFromRawArray:rawSubviews];
     NSArray<LookinDisplayItem *> *newSubitems = [self displayItemsFromRawArray:rawSubviews];
     if (newSubitems) {
         [self.allSubitems addObjectsFromArray:newSubitems];
@@ -144,8 +151,8 @@
         newItem.customInfo.semanticIdentifier = semanticIdentifier;
     }
     BOOL shouldCaptureSwiftUIScreenshot =
-        [semanticKind isEqualToString:@"swiftui-root"] ||
-        [semanticKind isEqualToString:@"swiftui-node"];
+        [semanticKind isEqualToString:@"swiftui-node"] &&
+        [self shouldCaptureSwiftUINodeWithIdentifier:semanticIdentifier frameValue:frameValue];
     if (shouldCaptureSwiftUIScreenshot) {
         UIImage *screenshot = [self screenshotForFrameValue:frameValue];
         if (screenshot) {
@@ -157,6 +164,62 @@
     newItem.customAttrGroupList = [LKS_CustomAttrGroupsMaker makeGroupsFromRawProperties:properties saveCustomSetter:self.saveAttrSetter];
     
     return newItem;
+}
+
+- (NSArray<NSDictionary<NSString *, id> *> *)swiftUISnapshotCandidatesFromRawArray:(NSArray *)rawArray {
+    if (![rawArray isKindOfClass:[NSArray class]]) {
+        return @[];
+    }
+    NSMutableArray<NSDictionary<NSString *, id> *> *result = [NSMutableArray array];
+    for (NSDictionary<NSString *, id> *dict in rawArray) {
+        if (![dict isKindOfClass:[NSDictionary class]]) {
+            continue;
+        }
+        NSString *semanticKind = dict[@"semanticKind"];
+        NSString *semanticIdentifier = dict[@"semanticIdentifier"];
+        NSValue *frameValue = dict[@"frameInWindow"];
+        if ([semanticKind isEqualToString:@"swiftui-node"] &&
+            [semanticIdentifier isKindOfClass:[NSString class]] &&
+            [frameValue isKindOfClass:[NSValue class]]) {
+            [result addObject:@{
+                @"semanticIdentifier": semanticIdentifier,
+                @"frameInWindow": frameValue,
+            }];
+        }
+        [result addObjectsFromArray:[self swiftUISnapshotCandidatesFromRawArray:dict[@"subviews"]]];
+    }
+    return result;
+}
+
+- (BOOL)shouldCaptureSwiftUINodeWithIdentifier:(NSString *)semanticIdentifier
+                                    frameValue:(NSValue *)frameValue {
+    if (![semanticIdentifier isKindOfClass:[NSString class]] ||
+        ![frameValue isKindOfClass:[NSValue class]]) {
+        return NO;
+    }
+    CGRect frame = CGRectStandardize(frameValue.CGRectValue);
+    CGFloat frameArea = CGRectGetWidth(frame) * CGRectGetHeight(frame);
+    if (CGRectIsNull(frame) || CGRectIsEmpty(frame) || !isfinite(frameArea) || frameArea <= 0) {
+        return NO;
+    }
+
+    for (NSDictionary<NSString *, id> *candidate in self.swiftUISnapshotCandidates) {
+        if ([candidate[@"semanticIdentifier"] isEqualToString:semanticIdentifier]) {
+            continue;
+        }
+        NSValue *candidateFrameValue = candidate[@"frameInWindow"];
+        CGRect candidateFrame = CGRectStandardize(candidateFrameValue.CGRectValue);
+        CGFloat candidateArea = CGRectGetWidth(candidateFrame) * CGRectGetHeight(candidateFrame);
+        if (CGRectIsNull(candidateFrame) || CGRectIsEmpty(candidateFrame) ||
+            !isfinite(candidateArea) || candidateArea <= 0) {
+            continue;
+        }
+        CGRect overlap = CGRectIntersection(frame, candidateFrame);
+        if (!CGRectIsNull(overlap) && !CGRectIsEmpty(overlap) && candidateArea <= frameArea) {
+            return NO;
+        }
+    }
+    return YES;
 }
 
 - (UIImage *)screenshotForFrameValue:(NSValue *)frameValue {
