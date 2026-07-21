@@ -143,7 +143,10 @@
     if ([semanticIdentifier isKindOfClass:[NSString class]]) {
         newItem.customInfo.semanticIdentifier = semanticIdentifier;
     }
-    if ([semanticKind isEqualToString:@"swiftui-root"]) {
+    BOOL shouldCaptureSwiftUIScreenshot =
+        [semanticKind isEqualToString:@"swiftui-root"] ||
+        [semanticKind isEqualToString:@"swiftui-node"];
+    if (shouldCaptureSwiftUIScreenshot) {
         UIImage *screenshot = [self screenshotForFrameValue:frameValue];
         if (screenshot) {
             newItem.soloScreenshot = screenshot;
